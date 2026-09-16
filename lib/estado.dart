@@ -7,17 +7,20 @@ library;
 
 import 'package:flutter/widgets.dart';
 
+import 'datos/actualizacion.dart';
 import 'datos/almacen.dart';
 import 'datos/nube.dart';
 
 class Estado extends InheritedWidget {
   final Almacen almacen;
   final Nube nube;
+  final Actualizacion actualizacion;
 
   const Estado({
     super.key,
     required this.almacen,
     required this.nube,
+    required this.actualizacion,
     required super.child,
   });
 
@@ -29,10 +32,11 @@ class Estado extends InheritedWidget {
 
   @override
   bool updateShouldNotify(Estado old) =>
-      almacen != old.almacen || nube != old.nube;
+      almacen != old.almacen || nube != old.nube || actualizacion != old.actualizacion;
 }
 
 extension EstadoEnContexto on BuildContext {
   Almacen get almacen => Estado.de(this).almacen;
   Nube get nube => Estado.de(this).nube;
+  Actualizacion get actualizacion => Estado.de(this).actualizacion;
 }

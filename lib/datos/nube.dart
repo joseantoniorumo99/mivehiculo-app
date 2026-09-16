@@ -97,8 +97,10 @@ class Nube extends ChangeNotifier {
   }
 
   Future<void> entrar(String correo, String clave) async {
+    // En minúsculas: el teclado del móvil pone mayúscula la primera letra
+    // sin que nadie se lo pida, y "Jose@" no es "jose@" para todo el mundo.
     await _cuenta.createEmailPasswordSession(
-        email: correo.trim(), password: clave);
+        email: correo.trim().toLowerCase(), password: clave);
     usuario = await _cuenta.get();
     notifyListeners();
   }
@@ -106,7 +108,7 @@ class Nube extends ChangeNotifier {
   Future<void> registrar(String nombre, String correo, String clave) async {
     await _cuenta.create(
       userId: ID.unique(),
-      email: correo.trim(),
+      email: correo.trim().toLowerCase(),
       password: clave,
       name: nombre.trim(),
     );

@@ -15,27 +15,46 @@
 /// —pasó con un Redmi: el lector aparecía en "disponibles" de los ajustes pero
 /// no llegaba a vincularse— la app se quedaba sin ninguna salida y sin ninguna
 /// explicación.
+///
+/// LA TERCERA, de la 1.1.0: la lectura se ve EN VIVO. Tras la primera pasada
+/// completa, el enlace se queda abierto y los datos que cambian (revoluciones,
+/// velocidad, temperaturas, tensión…) se refrescan cada segundo; «Guardar»
+/// coge el momento que se está viendo. Y se para SOLO en cuanto se sale de
+/// esta pestaña, la app pasa a segundo plano o pasan diez minutos: en vivo
+/// mientras se mira, nunca mientras no se mira.
 library;
 
 import 'package:flutter/material.dart';
 
-import 'datos/modelo.dart';
 import 'estado.dart';
 import 'obd/enlace_classic.dart';
+import 'obd/lectura_fondo.dart';
 import 'obd/lector_recordado.dart';
 import 'obd/protocolo.dart';
 import 'obd/transporte_bluetooth.dart';
 import 'tema.dart';
 
 class PantallaObd extends StatefulWidget {
-  const PantallaObd({super.key});
+  /// Si esta pestaña es la que se está mirando. Cuando deja de serlo, la
+  /// lectura en vivo se para: no se lee lo que nadie mira.
+  final bool activa;
+  const PantallaObd({super.key, this.activa = true});
   @override
   State<PantallaObd> createState() => _PantallaObdState();
 }
 
 enum _Fase { inicio, eligiendo, leyendo, resultado }
 
-class _PantallaObdState extends State<PantallaObd> {
+/// Los PID que cambian mientras el motor funciona y merecen refrescarse. Los
+/// que son fijos (norma OBD, sondas montadas, tipo de combustible…) se leen
+/// una vez y ya.
+const Set<int> _pidsVivos = {
+  0x0C, 0x0D, 0x05, 0x04, 0x11, 0x0B, 0x0F, 0x10, 0x42, 0x2F, 0x5C, 0x46,
+  0x0E, 0x06, 0x07, 0x14, 0x15, 0x03, 0x01, 0x21, 0x1F, 0x43, 0x45, 0x49,
+  0x5A, 0x5E, 0x33, 0x62, 0x61, 0x2C, 0x23, 0x22, 0x44, 0x3C, 0x3D,
+};
+
+class _PantallaObdState extends State<PantallaObd> with WidgetsBindingObserver {
   final _bt = Bluetooth();
   _Fase _fase = _Fase.inicio;
   String _paso = '';
@@ -55,6 +74,16 @@ class _PantallaObdState extends State<PantallaObd> {
   /// Para que el botón diga "Guardada" y no deje guardar dos veces la misma.
   bool _guardada = false;
 
+  /// EN VIVO: el enlace sigue abierto y los datos se refrescan.
+  bool _enVivo = false;
+  DateTime? _vivoDesde;
+  int _pasadas = 0;
+  Transporte? _transporteVivo;
+
+  /// El registro solo apunta la primera pasada: en vivo son cientos de
+  /// líneas por minuto y taparían lo que interesa cuando algo no cuadra.
+  bool _registrando = true;
+
   /// Cuando el permiso queda denegado PARA SIEMPRE, el sistema ya no vuelve a
   /// preguntar y la única salida son los ajustes de la app. Sin este botón el
   /// usuario se queda con un mensaje y ninguna forma de arreglarlo.
@@ -69,7 +98,7 @@ class _PantallaObdState extends State<PantallaObd> {
   final List<String> _registro = [];
 
   void _apuntar(String linea) {
-    _registro.add(linea);
+    if (_registrando) _registro.add(linea);
     if (mounted) setState(() => _paso = linea);
   }
 
@@ -92,6 +121,51 @@ class _PantallaObdState extends State<PantallaObd> {
   }
 
   // ---------------------------------------------------------------
+  // Ciclo de vida: en vivo solo mientras se mira
+  // ---------------------------------------------------------------
+
+  /// Al abrir la pantalla: si ya se sabe con qué lector se habló, se lee SOLA.
+  ///
+  /// Y se lee UNA VEZ, cerrando el enlace al terminar. Dejar el Bluetooth
+  /// escuchando en segundo plano gasta batería, deja el puerto cogido para
+  /// cualquier otra app y el sistema acaba matando el proceso igualmente. Lo
+  /// que se quiere es que el dato esté fresco cuando MIRAS, no que se lea
+  /// cuando no miras.
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _intentarSolo();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _pararVivo();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(PantallaObd viejo) {
+    super.didUpdateWidget(viejo);
+    if (viejo.activa && !widget.activa) _pararVivo();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState estado) {
+    if (estado != AppLifecycleState.resumed) _pararVivo();
+  }
+
+  Future<void> _intentarSolo() async {
+    final guardado = await LectorRecordado.leer();
+    if (guardado == null || !mounted) return;
+    final a = AparatoBluetooth(guardado.nombre, guardado.direccion,
+        emparejado: true);
+    setState(() => _lector = a);
+    await _conectarA(a, silencioSiFalla: true);
+  }
+
+  // ---------------------------------------------------------------
   // Elegir lector
   // ---------------------------------------------------------------
 
@@ -99,6 +173,7 @@ class _PantallaObdState extends State<PantallaObd> {
   /// puede buscar. Al revés —buscar antes de enseñar nada— son doce segundos
   /// mirando una ruleta para quien ya tenía su lector vinculado.
   Future<void> _elegirLector() async {
+    _pararVivo();
     setState(() {
       _fase = _Fase.eligiendo;
       _limpiarError();
@@ -155,107 +230,9 @@ class _PantallaObdState extends State<PantallaObd> {
   // Leer
   // ---------------------------------------------------------------
 
-  Future<void> _leer(Transporte transporte, {required bool ejemplo}) async {
-    setState(() {
-      _fase = _Fase.leyendo;
-      _esEjemplo = ejemplo;
-      _registro.clear();
-      _lecturas = [];
-      _averias = [];
-      _vin = null;
-      _limpiarError();
-    });
-
-    try {
-      /// El registro lo escribe la SESIÓN, no esta pantalla: así nada queda
-      /// fuera aunque el protocolo mande comandos por su cuenta, y el volcado
-      /// que se copia para mandármelo no puede mentir por omisión justo en la
-      /// parte que explicaría por qué falta un dato.
-      final sesion = Sesion(transporte, mirar: (que, texto) {
-        if (que == 'envia') {
-          _registro.add('> $texto');
-        } else {
-          _registro
-              .add('  ${texto.replaceAll(RegExp(r'[\r\n>]+'), ' ').trim()}');
-        }
-      });
-
-      _apuntar('Preparando el adaptador…');
-      if (!await sesion.iniciar()) {
-        throw 'El adaptador no responde a los comandos.';
-      }
-
-      /// Se le PREGUNTA al coche qué sabe dar antes de pedir nada. Con una
-      /// lista fija, un Opel real contestaba "no soportado" a cinco de diez
-      /// mientras tenía otros datos que nadie le preguntaba.
-      _apuntar('Preguntando al coche qué datos da…');
-      final lecturas = await sesion.leerLoQueHaya(
-        avisar: (hechos, total) => _apuntar('Leyendo $hechos de $total…'),
-      );
-
-      _apuntar('Buscando códigos de avería…');
-      final guardados = await sesion.leerCodigos(3);
-
-      _apuntar('Pidiendo el bastidor…');
-      final vin = await sesion.leerVin();
-
-      /// Si el coche no contesta a NADA, decirlo. Una pantalla vacía parece un
-      /// fallo de la app y casi siempre es que falta dar el contacto.
-      if (!ejemplo && lecturas.isEmpty && guardados.isEmpty && vin == null) {
-        throw 'El lector conecta pero el coche no contesta. ¿Está el contacto dado?';
-      }
-
-      if (!mounted) return;
-      setState(() {
-        _lecturas = lecturas;
-        _averias = guardados;
-        _vin = vin;
-        _guardada = false;
-        _fase = _Fase.resultado;
-      });
-
-      /// La lectura automática de al abrir se guarda SOLA: es la que vale como
-      /// "estaba en el coche tal día con tantos km". Y el bastidor se apunta
-      /// en el coche siempre que llega: es lo que ata el historial a ESE coche.
-      if (!ejemplo) {
-        if (vin != null) await context.almacen.ponerBastidor(vin);
-        if (_automatica) await _guardarLectura(avisando: false);
-      }
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _fase = _Fase.inicio;
-        _error = e.toString();
-      });
-    } finally {
-      await transporte.cerrar();
-    }
-  }
-
-  /// Al abrir la pantalla: si ya se sabe con qué lector se habló, se lee SOLA.
-  ///
-  /// Y se lee UNA VEZ, cerrando el enlace al terminar. Dejar el Bluetooth
-  /// escuchando en segundo plano gasta batería, deja el puerto cogido para
-  /// cualquier otra app y el sistema acaba matando el proceso igualmente. Lo
-  /// que se quiere es que el dato esté fresco cuando MIRAS, no que se lea
-  /// cuando no miras.
-  @override
-  void initState() {
-    super.initState();
-    _intentarSolo();
-  }
-
-  Future<void> _intentarSolo() async {
-    final guardado = await LectorRecordado.leer();
-    if (guardado == null || !mounted) return;
-    final a = AparatoBluetooth(guardado.nombre, guardado.direccion,
-        emparejado: true);
-    setState(() => _lector = a);
-    await _conectarA(a, silencioSiFalla: true);
-  }
-
   Future<void> _conectarA(AparatoBluetooth a,
       {bool silencioSiFalla = false}) async {
+    _pararVivo();
     setState(() {
       _fase = _Fase.leyendo;
       _paso = 'Conectando con ${a.nombre}…';
@@ -305,32 +282,164 @@ class _PantallaObdState extends State<PantallaObd> {
     }
   }
 
+  Future<void> _leer(Transporte transporte, {required bool ejemplo}) async {
+    setState(() {
+      _fase = _Fase.leyendo;
+      _esEjemplo = ejemplo;
+      _registro.clear();
+      _registrando = true;
+      _lecturas = [];
+      _averias = [];
+      _vin = null;
+      _limpiarError();
+    });
+
+    /// Si al final se queda en vivo, el enlace NO se cierra aquí: lo cierra
+    /// `_pararVivo` cuando toque.
+    var cedidoAlVivo = false;
+
+    try {
+      /// El registro lo escribe la SESIÓN, no esta pantalla: así nada queda
+      /// fuera aunque el protocolo mande comandos por su cuenta, y el volcado
+      /// que se copia para mandármelo no puede mentir por omisión justo en la
+      /// parte que explicaría por qué falta un dato.
+      final sesion = Sesion(transporte, mirar: (que, texto) {
+        if (!_registrando) return;
+        if (que == 'envia') {
+          _registro.add('> $texto');
+        } else {
+          _registro
+              .add('  ${texto.replaceAll(RegExp(r'[\r\n>]+'), ' ').trim()}');
+        }
+      });
+
+      _apuntar('Preparando el adaptador…');
+      if (!await sesion.iniciar()) {
+        throw 'El adaptador no responde a los comandos.';
+      }
+
+      /// Se le PREGUNTA al coche qué sabe dar antes de pedir nada. Con una
+      /// lista fija, un Opel real contestaba "no soportado" a cinco de diez
+      /// mientras tenía otros datos que nadie le preguntaba.
+      _apuntar('Preguntando al coche qué datos da…');
+      final lecturas = await sesion.leerLoQueHaya(
+        avisar: (hechos, total) => _apuntar('Leyendo $hechos de $total…'),
+      );
+
+      _apuntar('Buscando códigos de avería…');
+      final guardados = await sesion.leerCodigos(3);
+
+      _apuntar('Pidiendo el bastidor…');
+      final vin = await sesion.leerVin();
+
+      /// Si el coche no contesta a NADA, decirlo. Una pantalla vacía parece un
+      /// fallo de la app y casi siempre es que falta dar el contacto.
+      if (!ejemplo && lecturas.isEmpty && guardados.isEmpty && vin == null) {
+        throw 'El lector conecta pero el coche no contesta. ¿Está el contacto dado?';
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _lecturas = lecturas;
+        _averias = guardados;
+        _vin = vin;
+        _guardada = false;
+        _fase = _Fase.resultado;
+      });
+
+      /// La lectura automática de al abrir se guarda SOLA: es la que vale como
+      /// "estaba en el coche tal día con tantos km". Y el bastidor se apunta
+      /// en el coche siempre que llega: es lo que ata el historial a ESE coche.
+      if (!ejemplo) {
+        if (vin != null) await context.almacen.ponerBastidor(vin);
+        if (_automatica) await _guardarLectura(avisando: false);
+      }
+
+      /// EN VIVO, pero solo si alguien está mirando: la pestaña activa y la
+      /// lectura pedida a mano. La automática de al abrir la app se cierra:
+      /// nadie está en esta pestaña cuando pasa.
+      if (!ejemplo && !_automatica && widget.activa && lecturas.isNotEmpty) {
+        cedidoAlVivo = true;
+        _vivir(sesion, transporte);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _fase = _Fase.inicio;
+        _error = e.toString();
+      });
+    } finally {
+      if (!cedidoAlVivo) await transporte.cerrar();
+    }
+  }
+
+  /// El bucle en vivo: pasa por los PID que cambian, uno tras otro, y repinta
+  /// al final de cada pasada (una por segundo, más o menos). Se para solo
+  /// cuando se deja de mirar o a los diez minutos.
+  Future<void> _vivir(Sesion sesion, Transporte transporte) async {
+    _transporteVivo = transporte;
+    _registrando = false;
+    setState(() {
+      _enVivo = true;
+      _vivoDesde = DateTime.now();
+      _pasadas = 0;
+    });
+
+    final vivos = _lecturas.map((l) => l.pid).where(_pidsVivos.contains).toList();
+    try {
+      while (_enVivo && mounted) {
+        if (DateTime.now().difference(_vivoDesde!).inMinutes >= 10) {
+          _pararVivo(motivo: 'Diez minutos en vivo: se para solo para no gastar batería.');
+          break;
+        }
+        for (final pid in vivos) {
+          if (!_enVivo || !mounted) break;
+          final r = await sesion.leerPid(pid);
+          if (r == null) continue;
+          final i = _lecturas.indexWhere((l) => l.pid == pid);
+          if (i >= 0) _lecturas[i] = r;
+        }
+        if (!_enVivo || !mounted) break;
+        setState(() => _pasadas++);
+        // Un respiro: el ELM327 no gana nada con más de una pasada por segundo
+        // y la pantalla tampoco.
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+      }
+    } catch (_) {
+      // Se cayó el enlace (el coche se apagó, el lector se desenchufó): se
+      // deja lo último que se vio, que sigue siendo verdad de ese momento.
+      _pararVivo(motivo: 'Se ha perdido el enlace con el lector.');
+    }
+  }
+
+  void _pararVivo({String? motivo}) {
+    if (!_enVivo) return;
+    _enVivo = false;
+    final t = _transporteVivo;
+    _transporteVivo = null;
+    // ignore: discarded_futures
+    t?.cerrar();
+    if (mounted) {
+      setState(() {
+        if (motivo != null) _consejo = motivo;
+      });
+    }
+  }
+
   /// Guarda lo leído en las LECTURAS del coche, no en el diario. El diario es
   /// para lo que se le hace al coche; esto es lo que el coche dice de sí
-  /// mismo. Van aparte a propósito.
+  /// mismo. Van aparte a propósito. En vivo, coge el momento que se ve.
   Future<void> _guardarLectura({bool avisando = true}) async {
-    if (_esEjemplo || _guardada) return;
+    if (_esEjemplo) return;
+    if (_guardada && !_enVivo) return;
     final almacen = context.almacen;
     final coche = almacen.coche;
     if (coche == null) {
       if (avisando) avisar(context, 'Da de alta tu coche en el inicio para guardar lecturas.');
       return;
     }
-    int? km;
-    final valores = <String, String>{};
-    for (final l in _lecturas) {
-      if (l.pid == 0xA6 && l.valor != null) km = l.valor!.round();
-      valores[l.nombre] = l.esNumero
-          ? '${l.valor!.toStringAsFixed(_decimales(l.unidad))} ${l.unidad}'.trim()
-          : (l.texto ?? '');
-    }
-    await almacen.guardarLectura(LecturaGuardada(
-      vehiculoId: coche.id,
-      cuando: DateTime.now().toUtc().toIso8601String(),
-      km: km,
-      codigos: _averias.map((a) => a.codigo).toList(),
-      valores: valores,
-    ));
+    await almacen.guardarLectura(
+        construirLecturaGuardada(coche.id, _lecturas, _averias, automatica: _automatica));
     if (!mounted) return;
     setState(() => _guardada = true);
     if (avisando) avisar(context, 'Guardada en las lecturas del coche.');
@@ -343,7 +452,16 @@ class _PantallaObdState extends State<PantallaObd> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Diagnosis OBD')),
+      appBar: AppBar(
+        title: const Text('Diagnosis OBD'),
+        actions: [
+          if (_enVivo)
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Center(child: _chipVivo()),
+            ),
+        ],
+      ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(20),
@@ -358,46 +476,46 @@ class _PantallaObdState extends State<PantallaObd> {
     );
   }
 
+  Widget _chipVivo() => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: Tono.tealFilm,
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              decoration: const BoxDecoration(color: Tono.tealTinta, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 6),
+            Text('EN VIVO · $_pasadas',
+                style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Tono.tealTinta,
+                    fontFeatures: [FontFeature.tabularFigures()])),
+          ],
+        ),
+      );
+
   Widget _aviso() {
-    if (_error == null) return const SizedBox.shrink();
-    final c = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.all(14),
-      margin: const EdgeInsets.only(top: 16),
-      decoration: BoxDecoration(
-        color: c.tertiaryContainer,
-        border: Border.all(color: c.tertiary.withValues(alpha: 0.35)),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(_error!, style: const TextStyle(fontWeight: FontWeight.w600)),
-
-          // Qué pasa y qué hacer van con pesos distintos: primero lo uno,
-          // luego lo otro. Todo en negrita no es un aviso, es un grito.
-          if (_consejo != null) ...[
-            const SizedBox(height: 6),
-            Text(_consejo!),
-          ],
-
-          /// Un mensaje sin salida no sirve de nada.
-          if (_ofrecerAjustes) ...[
-            const SizedBox(height: 8),
-            TextButton(
+    if (_error == null && _consejo == null) return const SizedBox.shrink();
+    return Recuadro(
+      _error ?? _consejo!,
+      consejo: _error == null ? null : _consejo,
+      tono: _error == null ? TonoEstado.neutro : TonoEstado.atencion,
+      accion: _ofrecerAjustes
+          ? TextButton(
               onPressed: _bt.abrirAjustes,
-              child: const Text('Abrir los ajustes de la app'),
-            ),
-          ],
-          if (_ofrecerUbicacion) ...[
-            const SizedBox(height: 8),
-            TextButton(
-              onPressed: _bt.abrirAjustesUbicacion,
-              child: const Text('Abrir los ajustes de ubicación'),
-            ),
-          ],
-        ],
-      ),
+              child: const Text('Abrir los ajustes de la app'))
+          : _ofrecerUbicacion
+              ? TextButton(
+                  onPressed: _bt.abrirAjustesUbicacion,
+                  child: const Text('Abrir los ajustes de ubicación'))
+              : null,
     );
   }
 
@@ -438,6 +556,7 @@ class _PantallaObdState extends State<PantallaObd> {
                 ejemplo: true),
             child: const Text('Ver un ejemplo de lectura'),
           ),
+          const SizedBox(height: 16),
           _aviso(),
         ],
       );
@@ -468,8 +587,8 @@ class _PantallaObdState extends State<PantallaObd> {
               ? 'Buscando… (tarda unos segundos)'
               : 'Buscar los que hay cerca'),
         ),
-        _aviso(),
         const SizedBox(height: 14),
+        _aviso(),
         if (emparejados.isNotEmpty) ...[
           const Text('Ya emparejados',
               style: TextStyle(fontWeight: FontWeight.w600)),
@@ -533,26 +652,48 @@ class _PantallaObdState extends State<PantallaObd> {
     return ListView(
       children: [
         if (_esEjemplo)
-          Container(
-            padding: const EdgeInsets.all(14),
-            margin: const EdgeInsets.only(bottom: 14),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.tertiaryContainer,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: const Text(
-              'Esto es un ejemplo, no tu coche. Son datos de muestra para ver '
-              'cómo queda la pantalla. No se pueden guardar en el diario.',
-              style: TextStyle(fontWeight: FontWeight.w500),
-            ),
+          const Recuadro(
+            'Esto es un ejemplo, no tu coche.',
+            consejo: 'Son datos de muestra para ver cómo queda la pantalla. No se '
+                'pueden guardar en el diario.',
+            tono: TonoEstado.atencion,
           ),
+        if (_automatica && _guardada)
+          const Recuadro(
+            'Lectura guardada sola al abrir la app.',
+            consejo: 'Está en Diario → Lecturas del OBD, aparte de las facturas.',
+            tono: TonoEstado.calma,
+          ),
+        if (_consejo != null && _error == null)
+          Recuadro(_consejo!, tono: TonoEstado.neutro),
         if (_vin != null) ...[
           const Text('Bastidor', style: TextStyle(fontWeight: FontWeight.w600)),
           SelectableText(_vin!),
           const SizedBox(height: 16),
         ],
-        Text('Lecturas · ${_lecturas.length}',
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+        Row(
+          children: [
+            Expanded(
+              child: Text('Lecturas · ${_lecturas.length}',
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+            ),
+            if (_enVivo)
+              TextButton(onPressed: () => _pararVivo(), child: const Text('Detener'))
+            else if (!_esEjemplo && _lector != null && widget.activa)
+              TextButton(
+                  onPressed: () => _conectarA(_lector!),
+                  child: const Text('Ver en vivo')),
+          ],
+        ),
+        if (_enVivo)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 6),
+            child: Text(
+              'Los valores se refrescan cada segundo. «Guardar» coge el momento '
+              'que estás viendo. Se para solo al salir de aquí o a los diez minutos.',
+              style: TextStyle(fontSize: 12, color: Tono.tintaSuave),
+            ),
+          ),
         const SizedBox(height: 6),
         if (_lecturas.isEmpty)
           const Text('El coche no ha dado ninguna lectura.')
@@ -589,35 +730,34 @@ class _PantallaObdState extends State<PantallaObd> {
                 subtitle: Text(a.descripcion),
               )),
         const SizedBox(height: 20),
-        if (_automatica && _guardada)
-          const Recuadro(
-            'Lectura guardada sola al abrir la app.',
-            consejo: 'Está en Diario → Lecturas del OBD, aparte de las facturas.',
-            tono: TonoEstado.calma,
-          ),
         FilledButton(
           /// Un ejemplo NO se guarda. Va desactivado, no escondido: que se vea
           /// que existe y por qué no se puede.
-          onPressed: (_esEjemplo || _guardada) ? null : () => _guardarLectura(),
+          onPressed: (_esEjemplo || (_guardada && !_enVivo)) ? null : () => _guardarLectura(),
           child: Text(_esEjemplo
               ? 'No se puede guardar un ejemplo'
-              : _guardada
-                  ? 'Guardada en las lecturas'
-                  : 'Guardar en las lecturas'),
+              : _enVivo
+                  ? 'Guardar este momento'
+                  : _guardada
+                      ? 'Guardada en las lecturas'
+                      : 'Guardar en las lecturas'),
         ),
-        if (!_esEjemplo && _lector != null)
+        if (!_esEjemplo && _lector != null && !_enVivo)
           TextButton(
             onPressed: () => _conectarA(_lector!),
             child: const Text('Volver a leer'),
           ),
         TextButton(
-          onPressed: () => setState(() => _fase = _Fase.inicio),
+          onPressed: () {
+            _pararVivo();
+            setState(() => _fase = _Fase.inicio);
+          },
           child: const Text('Volver'),
         ),
         const SizedBox(height: 16),
         ExpansionTile(
           title: const Text('Lo que ha contestado'),
-          subtitle: const Text('Para adjuntarlo si algo no cuadra'),
+          subtitle: const Text('La primera pasada, para adjuntarla si algo no cuadra'),
           children: [
             Padding(
               padding: const EdgeInsets.all(12),
@@ -647,7 +787,7 @@ class _PantallaObdState extends State<PantallaObd> {
           constraints: const BoxConstraints(maxWidth: 200),
           child: Text(
             l.esNumero
-                ? '${l.valor!.toStringAsFixed(_decimales(l.unidad))} ${l.unidad}'
+                ? '${l.valor!.toStringAsFixed(decimalesDe(l.unidad))} ${l.unidad}'
                 : (l.texto ?? '—'),
             textAlign: TextAlign.right,
             style: TextStyle(
@@ -658,13 +798,4 @@ class _PantallaObdState extends State<PantallaObd> {
           ),
         ),
       );
-
-  /// Las revoluciones y los kilómetros no llevan decimales; los voltios, uno.
-  /// La tensión de una sonda lambda va a tres: su margen entero son 0,1 a 0,9
-  /// voltios, y con un decimal se pierde justo lo que se quería mirar.
-  int _decimales(String unidad) {
-    if (unidad == 'V') return 3;
-    if (unidad == 'L/h' || unidad == 'g/s' || unidad == 'h') return 1;
-    return 0;
-  }
 }

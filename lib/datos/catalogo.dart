@@ -40,6 +40,29 @@ class Motor {
     return partes.join(' ');
   }
 
+  /// "2016–2019" o "2019". Va a la vista para que el dueño vea si el motor
+  /// cuadra con su año, en vez de que la app decida por él y se equivoque.
+  String get anios => desde == hasta ? '$desde' : '$desde–$hasta';
+
+  /// La etiqueta con los años: es la que identifica una motorización sin
+  /// ambigüedad en un desplegable (dos "1.6 Diésel" con años distintos son
+  /// dos entradas distintas de la fuente).
+  String get etiquetaLarga => '$etiqueta · $anios';
+
+  /// Los cm³ exactos. Es lo que permite reconocer un motor por su nombre
+  /// comercial cuando la fuente no lo trae: 1.560 cm³ en un PSA es el HDi.
+  String get detalle {
+    final partes = <String>[];
+    if (cilindrada > 0) partes.add('${_miles(cilindrada)} cm³');
+    if (cv == 0) partes.add('potencia no consta en la fuente');
+    return partes.join(' · ');
+  }
+
+  static String _miles(int n) {
+    final s = n.toString();
+    return s.length > 3 ? '${s.substring(0, s.length - 3)}.${s.substring(s.length - 3)}' : s;
+  }
+
   bool cubre(int anio) => anio >= desde && anio <= hasta;
 }
 
@@ -86,14 +109,26 @@ class Catalogo {
     return m.keys.toList()..sort();
   }
 
-  /// Las motorizaciones de un modelo, y si se da un año, solo las que ese año
-  /// existían. Enseñar un motor que no se vendía ese año invita a elegirlo
-  /// mal.
+  /// Las motorizaciones de un modelo, TODAS, ordenadas: primero las que se
+  /// vendían el año dado, luego las más cercanas a ese año.
+  ///
+  /// Antes se FILTRABAN por año y se escondían las demás, y eso se comió el
+  /// 1.6 HDi de un C3 real: la matrícula había datado el coche en 2020, ese
+  /// motor se vendió hasta 2019, y como otros motores sí cubrían 2020 la lista
+  /// salía sin él. Un año mal puesto no puede borrar el motor de verdad; se
+  /// ordena y se enseña el rango de años para que el dueño decida.
   List<Motor> motoresDe(String marca, String modelo, {int? anio}) {
-    final lista = marcas[marca]?[modelo] ?? const <Motor>[];
+    final lista = [...(marcas[marca]?[modelo] ?? const <Motor>[])];
     if (anio == null) return lista;
-    final filtrados = lista.where((m) => m.cubre(anio)).toList();
-    return filtrados.isEmpty ? lista : filtrados;
+    int distancia(Motor m) =>
+        m.cubre(anio) ? 0 : (anio < m.desde ? m.desde - anio : anio - m.hasta);
+    lista.sort((a, b) {
+      final d = distancia(a).compareTo(distancia(b));
+      if (d != 0) return d;
+      final c = a.cilindrada.compareTo(b.cilindrada);
+      return c != 0 ? c : a.cv.compareTo(b.cv);
+    });
+    return lista;
   }
 
   /// Los años en que se vendió ese modelo, de más nuevo a más viejo.

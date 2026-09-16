@@ -1,7 +1,27 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+/* LA FIRMA DE RELEASE.
+   Las claves NO van en el repo: viven en android/key.properties (ignorado por
+   git) y apuntan a un keystore fuera del proyecto. Sin ese fichero se firma
+   con la clave de depuración, que vale para probar en el propio móvil y
+   para nada más.
+
+   Por qué importa: Android solo instala una versión nueva ENCIMA de la vieja
+   si las dos llevan la misma firma. La autoactualización de la app depende
+   de que TODAS las releases se firmen con este mismo keystore. Si se pierde,
+   nadie podrá actualizar: habrá que desinstalar y perder los datos locales. */
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+val hayFirmaDeRelease = keystorePropertiesFile.exists()
+if (hayFirmaDeRelease) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
 android {
@@ -15,25 +35,31 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "es.regislab.mivehiculo"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
-        // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
-        // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)
-        // You can force using the value of versionCode by specifying the `-P force-version-code-ignoring-abi=true`
-        // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (hayFirmaDeRelease) {
+            create("release") {
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+                storeFile = file(keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["storePassword"] as String
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (hayFirmaDeRelease) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 }
@@ -42,6 +68,12 @@ kotlin {
     compilerOptions {
         jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
     }
+}
+
+dependencies {
+    // El receptor de Bluetooth encola trabajos de WorkManager él mismo; el
+    // plugin lo trae como dependencia interna y no lo expone al proyecto.
+    implementation("androidx.work:work-runtime:2.10.1")
 }
 
 flutter {

@@ -5,7 +5,7 @@ de lo que se le hace, los avisos de lo que toca, la lectura del motor por
 **OBD-II** con un lector ELM327 de Bluetooth clásico, los talleres cercanos y
 el expediente completo para enseñar cuando lo vendas.
 
-**Versión 1.0.0: la vista del dueño del coche.** Sin nada de talleres (ese
+**Versión 1.1.0: la vista del dueño del coche.** Sin nada de talleres (ese
 lado vive en la versión web).
 
 ## Qué hace
@@ -16,17 +16,21 @@ lado vive en la versión web).
 - **Diario**: cada intervención con fecha, km, coste, taller, desglose de la
   factura línea a línea y la foto de la factura, guardada dentro de la app.
 - **Avisos**: ITV por la norma (a los 4 años, cada 2 hasta los 10, luego
-  anual) desde la fecha de matriculación —que sale sola de la matrícula—;
+  anual) desde la fecha de matriculación —que sale sola de la matrícula, al
+  mes— y, si hay una ITV anotada, **desde esa ITV**, que es la que vale;
   aceite, neumáticos, frenos y correa desde la última anotación del diario,
   contando también lo que iba dentro de una revisión general. Sin saber
   cuándo se hizo la última vez, **no se avisa**: adivinar sería mentir.
 - **OBD**: conecta con el lector, pregunta al coche qué datos soporta y los
   lee todos; testigo del motor, códigos de avería, bastidor, sondas lambda…
   Lo que la app aún no sabe interpretar lo enseña en hexadecimal en vez de
-  callárselo. Al abrir la app, si el lector contesta (o sea, si estás en el
-  coche con el contacto dado), se hace una lectura sola y se guarda en
-  **Lecturas**, aparte del diario. Nunca queda nada escuchando en segundo
-  plano.
+  callárselo. Y **en vivo**: tras la primera pasada los datos se refrescan
+  cada segundo mientras miras la pestaña, y «Guardar» coge ese momento.
+- **Lecturas automáticas**, aparte del diario: al abrir la app con el coche
+  en contacto se lee sola; y, si lo enciendes en «Lectura automática»,
+  también cuando el móvil se conecta al Bluetooth del coche o cada cierto
+  tiempo. Cada opción dice lo que cuesta en batería. Nunca hay un servicio
+  permanente escuchando.
 - **Mapa**: talleres, gasolineras, lavaderos, recambios y desguaces de
   OpenStreetMap, con distancia desde ti, horario y «abierto ahora», llamar y
   cómo llegar. Un aviso lleva directo a los talleres que hacen eso.
@@ -36,6 +40,8 @@ lado vive en la versión web).
   para compartir como texto.
 - **Cuenta (opcional)**: sin ella todo funciona y vive en el móvil. Con ella,
   se copia a la nube y sale en la web y en otros móviles.
+- **Se actualiza sola**: comprueba las releases de GitHub cada seis horas,
+  avisa en el inicio, y descarga e instala desde el perfil.
 
 ## Por qué una app y no la web
 
@@ -58,6 +64,7 @@ del móvil y **no** aparece en el selector del navegador.
 lib/datos/modelo.dart          vehículos, intervenciones, citas, lecturas (JSON)
 lib/datos/almacen.dart         el guardado local y las marcas de sincronización
 lib/datos/nube.dart            la cuenta y la copia en Appwrite
+lib/datos/actualizacion.dart   la autoactualización desde las releases de GitHub
 lib/datos/mantenimiento.dart   ITV, avisos, AdBlue, huecos, formato
 lib/datos/panel.dart           la serie de gasto y las cuatro cifras del inicio
 lib/datos/matricula.dart       de la matrícula española al mes de matriculación
@@ -66,7 +73,9 @@ lib/lugares/lugares.dart       OpenStreetMap → sitios, horarios, distancias
 lib/obd/protocolo.dart         el protocolo OBD-II, sin saber por dónde viaja
 lib/obd/transporte_bluetooth.dart  el diálogo con el ELM327 + un simulador
 lib/obd/enlace_classic.dart    lo único que sabe qué paquete de Bluetooth se usa
+lib/obd/lectura_fondo.dart     la lectura en segundo plano (WorkManager)
 lib/pantallas/                 una pantalla por fichero
+android/.../ReceptorBluetooth.kt  despierta la app cuando el móvil se conecta al coche
 ```
 
 **El móvil manda y la nube es la copia.** La app arranca, funciona y guarda
@@ -78,6 +87,12 @@ servidor, y un cubo para las fotos de las facturas.
 
 **Un cero es un dato; la ausencia, no.** Un `km` que no se sabe es `null`,
 nunca `0`. Confundirlos es lo que hace que una app enseñe un coche sin usar.
+
+**El año que escribe el dueño manda sobre la matrícula.** La matrícula data
+la matriculación en España al mes (tabla mensual completa desde 2000); un
+coche importado lleva la matrícula del día que llegó, y para la ITV cuenta su
+primera matriculación en origen. Por eso las motorizaciones nunca se esconden
+por año: se ordenan, y se enseñan con sus años de venta y sus cm³.
 
 ## El OBD, escrito desde el estándar
 
@@ -94,19 +109,27 @@ Lo que costó que conectara de verdad, por si a alguien le sirve: antes de
 abrir el socket hay que **parar la búsqueda de Bluetooth** (mientras dura, la
 radio salta de canal y cualquier RFCOMM se cae), hay que **emparejar** si no
 lo está (PIN 1234 o 0000), y muchos clones solo aceptan **socket inseguro**.
-Y aceptan **un móvil a la vez**.
+Y aceptan **un móvil a la vez**: si otro teléfono sigue enganchado, el
+segundo no entra.
 
 ## Probar
 
 ```bash
 flutter pub get
-flutter test        # 96 pruebas: protocolo, ITV, avisos, panel, matrícula, sitios, almacén
+flutter test        # 100 pruebas: protocolo, ITV, avisos, panel, matrícula, sitios, almacén
 flutter run         # con el móvil conectado por USB
 ```
 
 Para leer un coche de verdad: enchufa el lector y **da el contacto** (se
 alimenta del pin 16 del conector; sin eso ni se enciende). La app busca el
 lector, lo empareja y lee.
+
+## Releases
+
+Cada versión se publica como release de GitHub con el APK adjunto, y la app
+instalada lo encuentra sola. Todas van firmadas con la **misma clave** (fuera
+del repo, en `android/key.properties`, ignorado por git): sin eso Android no
+instalaría una versión encima de la anterior y habría que desinstalar.
 
 ## Servidor (opcional)
 
@@ -120,6 +143,7 @@ servidor la app funciona igual: lo dice en el perfil y se queda en local.
 - Mapas y sitios: © OpenStreetMap y sus colaboradores, ODbL.
 - Catálogo de coches: matriculaciones en España publicadas por la Agencia
   Europea de Medio Ambiente. Cubre 2010–2022; fuera de ahí se elige a mano.
+- Series de matrículas por mes: tablas públicas de seguimiento de la DGT.
 
 ## Licencia
 

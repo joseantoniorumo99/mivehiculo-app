@@ -1,13 +1,25 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Red: los sitios del mapa, las teselas y la copia en la nube.
-         Flutter solo la declara en depuración; en release hay que ponerla. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- Red: los sitios del mapa, las teselas, la copia en la nube y la
+         descarga de versiones nuevas. Flutter solo la declara en depuración;
+         en release hay que ponerla. -->
     <uses-permission android:name="android.permission.INTERNET"/>
 
     <!-- Ubicación: para medir las distancias DESDE la persona y centrar el
          mapa. Sin ella el mapa funciona igual, centrado a mano.
-         (Los permisos de Bluetooth los declara el propio plugin.) -->
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+
+         OJO CON `tools:node="replace"`: el plugin de Bluetooth declara estos
+         dos permisos con `maxSdkVersion="30"` (solo los necesita en Android
+         viejo), y al fusionar los manifiestos ESA versión ganaba. Resultado:
+         en Android 12+ el permiso no existía, el sistema nunca preguntaba y
+         el mapa salía sin ubicación sin explicación. Con `replace`, manda la
+         declaración de la app, sin tope de versión. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" tools:node="replace"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" tools:node="replace"/>
+
+    <!-- Instalar la versión nueva que la propia app descarga. El sistema
+         pide confirmación la primera vez ("permitir instalar de esta app"). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
 
     <application
         android:label="Mi Vehículo"
@@ -31,6 +43,21 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+
+        <!-- Cuando el móvil se conecta por Bluetooth al COCHE (el manos
+             libres o la radio), Android despierta este receptor aunque la app
+             esté cerrada: es de los pocos avisos que el sistema sigue
+             entregando a apps dormidas. El receptor encola una lectura del
+             OBD para dentro de un minuto y se vuelve a dormir. Cero consumo
+             mientras no conduces. -->
+        <receiver
+            android:name=".ReceptorBluetooth"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.bluetooth.device.action.ACL_CONNECTED"/>
+            </intent-filter>
+        </receiver>
+
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />

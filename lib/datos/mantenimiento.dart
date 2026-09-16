@@ -61,7 +61,17 @@ class ProximaItv {
   final int? mes; // 1-12, null cuando solo se sabe el año
   final int faltan; // años hasta que toque; <= 0 es "ya"
   final bool exacta;
-  const ProximaItv(this.anio, this.mes, this.faltan, this.exacta);
+
+  /// True cuando se ha contado desde la última ITV anotada en el diario, que
+  /// es la fecha que vale de verdad: la pegatina caduca desde la inspección,
+  /// no desde el cumpleaños del coche.
+  final bool desdeUltima;
+
+  /// True cuando la fecha ya pasó: ITV caducada, no "toca este año".
+  final bool vencida;
+
+  const ProximaItv(this.anio, this.mes, this.faltan, this.exacta,
+      {this.desdeUltima = false, this.vencida = false});
 
   String get cuando =>
       exacta && mes != null ? '${mesesCortos[mes! - 1]} de $anio' : 'hacia $anio';
@@ -76,11 +86,30 @@ class ProximaItv {
 /// los 10 todos los años. Con la fecha de matriculación se dice el MES; sin
 /// ella solo el año, y la app tiene que decir que es aproximado en vez de
 /// fingir precisión que no tiene.
-ProximaItv? proximaItv(int? anio, String matriculacion, {DateTime? hoyPara}) {
+///
+/// SI HAY UNA ITV ANOTADA EN EL DIARIO, MANDA ELLA. La validez la da la
+/// inspección: dos años si el coche tenía menos de diez al pasarla, uno si
+/// tenía diez o más. Es más exacto que el calendario teórico porque nadie
+/// pasa la ITV el día justo, y cada retraso mueve las siguientes.
+ProximaItv? proximaItv(int? anio, String matriculacion,
+    {DateTime? hoyPara, String? ultimaItv}) {
   final hoy = hoyPara ?? DateTime.now();
   final ahora = hoy.year;
 
   final m = RegExp(r'^(\d{4})-(\d{2})').firstMatch(matriculacion);
+
+  final ultima = ultimaItv == null ? null : DateTime.tryParse(ultimaItv);
+  final anioBase = m != null ? int.parse(m.group(1)!) : anio;
+  if (ultima != null && anioBase != null && anioBase > 1900) {
+    final mesBase = m != null ? int.parse(m.group(2)!) : 1;
+    final edadEnMeses = (ultima.year - anioBase) * 12 + (ultima.month - mesBase);
+    final validez = edadEnMeses < 10 * 12 ? 2 : 1;
+    final toca = DateTime.utc(ultima.year + validez, ultima.month, ultima.day);
+    final hoyUtc = DateTime.utc(hoy.year, hoy.month, hoy.day);
+    return ProximaItv(toca.year, toca.month, toca.year - ahora, true,
+        desdeUltima: true, vencida: toca.isBefore(hoyUtc));
+  }
+
   if (m != null) {
     final a0 = int.parse(m.group(1)!);
     final mes0 = int.parse(m.group(2)!);
@@ -126,10 +155,15 @@ List<Aviso> avisosDe(Vehiculo? coche, List<Intervencion> diario,
   final lista = <Aviso>[];
   final km = coche.km;
 
-  final itv = proximaItv(coche.anioEfectivo, coche.matriculacion, hoyPara: hoyPara);
+  final itv = proximaItv(coche.anioEfectivo, coche.matriculacion,
+      hoyPara: hoyPara, ultimaItv: ultimaDelTipo(diario, 'itv')?.fecha);
   if (itv != null) {
     final String detalle;
-    if (itv.exacta) {
+    if (itv.vencida) {
+      detalle = 'Caducada desde ${itv.cuando} · contando desde tu última ITV';
+    } else if (itv.desdeUltima) {
+      detalle = 'Toca en ${itv.cuando} · contando desde tu última ITV';
+    } else if (itv.exacta) {
       detalle = 'Toca en ${itv.cuando}';
     } else if (itv.faltan <= 0) {
       detalle = 'Toca este año · fecha aproximada por el año de matriculación';

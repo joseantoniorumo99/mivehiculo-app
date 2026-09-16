@@ -258,13 +258,42 @@ class Bluetooth {
   Future<EnlaceClassic> conectar(
     String direccion, {
     void Function(String)? avisar,
+
+    /// En segundo plano NO se empareja (saldría el diálogo del PIN sin nadie
+    /// mirando), no se pide permiso (no hay pantalla donde pedirlo) y se hace
+    /// UN intento por modo con tope corto: si el coche está apagado el lector
+    /// no existe, y cada segundo de espera es batería.
+    bool enSegundoPlano = false,
   }) async {
-    await _asegurarPermisos();
-    await _asegurarEncendido();
+    if (!enSegundoPlano) {
+      await _asegurarPermisos();
+      await _asegurarEncendido();
+    } else if (!await _btc.isEnabled()) {
+      throw const ErrorBluetooth(FalloBluetooth.apagado, 'El Bluetooth está apagado.');
+    }
 
     // 1. Parar la búsqueda. Sin esto, lo demás da igual.
     await pararBusqueda();
     await Future<void>.delayed(const Duration(milliseconds: 250));
+
+    if (enSegundoPlano) {
+      Object? ultimo;
+      for (final seguro in [true, false]) {
+        try {
+          final c = await _btc.connect(
+            address: direccion,
+            secure: seguro,
+            timeout: const Duration(seconds: 8),
+          );
+          return EnlaceClassic(c);
+        } catch (e) {
+          ultimo = e;
+          await Future<void>.delayed(const Duration(milliseconds: 500));
+        }
+      }
+      throw ErrorBluetooth(
+          FalloBluetooth.noContesta, 'El lector no contesta.', '$ultimo');
+    }
 
     // 2. Emparejar si hace falta. Un socket seguro sin vínculo no va.
     final emparejadosYa = await _btc.getPairedDevices();

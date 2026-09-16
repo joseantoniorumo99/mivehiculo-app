@@ -12,26 +12,33 @@ void main() {
     expect(partesDeMatricula('1234 ABE'), isNull); // la E no es consonante del sistema
   });
 
-  test('las anclas devuelven exactamente su enero', () {
-    final f = fechaDeMatricula('0000 KTK')!; // primera serie de 2019
-    expect(f.anio, 2019);
-    expect(f.mes, 1);
-    expect(f.iso, '2019-01');
+  /// La tabla es mensual: la última serie de cada mes. Una serie cae en el
+  /// primer mes cuyo final la alcanza. Antes se interpolaba entre una ancla
+  /// por año y un C3 de 2018 salió como de 2020.
+  test('la última serie de un mes cae en ese mes', () {
+    final f = fechaDeMatricula('9999 KHG')!; // fin de enero de 2018
+    expect(f.iso, '2018-01');
+    expect(f.exacta, isTrue);
   });
 
-  test('una serie entre dos anclas cae en el año que toca', () {
-    final f = fechaDeMatricula('4821 KYT')!; // entre KTK (2019) y LFJ (2020)
-    expect(f.anio, 2019);
-    expect(f.mes, greaterThan(1));
+  test('la serie siguiente ya es el mes siguiente', () {
+    expect(fechaDeMatricula('0000 KHH')!.iso, '2018-02');
+    expect(fechaDeMatricula('0000 KTK')!.iso, '2019-02'); // KTJ cerró enero
   });
 
-  test('una serie más nueva que la última ancla sigue el ritmo', () {
-    final f = fechaDeMatricula('0000 NLB')!; // detrás de NKG (2026)
+  test('una serie de mitad de año cae en su mes', () {
+    final f = fechaDeMatricula('4821 KYT')!; // KYN cerró junio de 2019
+    expect(f.iso, '2019-07');
+  });
+
+  test('una serie más nueva que la tabla se extrapola y se dice', () {
+    final f = fechaDeMatricula('0000 NSB')!; // detrás de NPZ (abr 2026)
     expect(f.anio, 2026);
+    expect(f.exacta, isFalse);
   });
 
-  test('las series anteriores al arranque del sistema no se datan', () {
-    expect(fechaDeMatricula('0000 BBB')!.anio, 2000);
+  test('el arranque del sistema es septiembre de 2000', () {
+    expect(fechaDeMatricula('0000 BBB')!.iso, '2000-09');
   });
 
   test('la posición en la secuencia es base 20', () {

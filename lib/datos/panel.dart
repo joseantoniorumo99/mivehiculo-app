@@ -210,7 +210,7 @@ List<Metrica> metricasDe(
   final urgentes = avisos.where((a) => a.urgencia == Urgencia.alta).length;
   final pronto = avisos.where((a) => a.urgencia == Urgencia.media).length;
   final itv = proximaItv(coche?.anioEfectivo, coche?.matriculacion ?? '',
-      hoyPara: hoy);
+      hoyPara: hoy, ultimaItv: ultimaDelTipo(diario, 'itv')?.fecha);
 
   /// Los km recorridos salen de la diferencia entre el cuentakilómetros de hoy
   /// y el de la anotación más antigua del periodo. Sin una anotación dentro
@@ -251,12 +251,20 @@ List<Metrica> metricasDe(
       valor: itv?.corto ?? '—',
       chip: itv == null
           ? null
-          : itv.faltan <= 0
-              ? const Chip('Toca ya', TonoChip.urgente)
-              : itv.faltan == 1
-                  ? const Chip('El año que viene', TonoChip.atencion)
-                  : const Chip('En regla', TonoChip.calma),
-      nota: (itv != null && !itv.exacta) ? 'Aproximada por el año' : null,
+          : itv.vencida
+              ? const Chip('Caducada', TonoChip.urgente)
+              : itv.faltan <= 0
+                  ? const Chip('Toca ya', TonoChip.urgente)
+                  : itv.faltan == 1
+                      ? const Chip('El año que viene', TonoChip.atencion)
+                      : const Chip('En regla', TonoChip.calma),
+      nota: itv == null
+          ? null
+          : itv.desdeUltima
+              ? 'Desde tu última ITV'
+              : !itv.exacta
+                  ? 'Aproximada por el año'
+                  : null,
       destino: DestinoMetrica.avisos,
       describe: 'Ver los avisos',
     ),

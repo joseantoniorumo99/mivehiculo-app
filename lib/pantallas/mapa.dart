@@ -43,6 +43,7 @@ class _PantallaMapaState extends State<PantallaMapa> {
   bool _cargando = false;
   String? _fallo;
   String? _notaUbicacion;
+  String? _notaTeselas;
   TipoLugar? _filtro;
   String? _servicio;
   bool _mapaListo = false;
@@ -80,15 +81,28 @@ class _PantallaMapaState extends State<PantallaMapa> {
             'centro del mapa.';
         return;
       }
+      /// Primero la ÚLTIMA POSICIÓN CONOCIDA, que es instantánea, y el mapa
+      /// se centra ya; luego la de verdad, que en un garaje puede tardar o no
+      /// llegar nunca. Antes se esperaba solo a la segunda y el mapa se quedaba
+      /// en el centro por defecto mientras tanto, que parecía roto.
+      final ultima = await Geolocator.getLastKnownPosition();
+      if (ultima != null) {
+        _yo = LatLng(ultima.latitude, ultima.longitude);
+        _centroVista = _yo!;
+        if (_mapaListo) _mapa.move(_yo!, 13);
+        if (mounted) setState(() {});
+      }
       final p = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium),
-      ).timeout(const Duration(seconds: 12));
+      ).timeout(const Duration(seconds: 15));
       _yo = LatLng(p.latitude, p.longitude);
       _centroVista = _yo!;
       if (_mapaListo) _mapa.move(_yo!, 13);
     } catch (_) {
-      _notaUbicacion = 'No he podido saber dónde estás. Las distancias se miden desde '
-          'el centro del mapa.';
+      if (_yo == null) {
+        _notaUbicacion = 'No he podido saber dónde estás. Las distancias se miden desde '
+            'el centro del mapa.';
+      }
     }
     if (mounted) setState(() {});
   }
@@ -191,6 +205,16 @@ class _PantallaMapaState extends State<PantallaMapa> {
                     TileLayer(
                       urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                       userAgentPackageName: 'es.regislab.mivehiculo',
+                      maxZoom: 19,
+                      // Si las teselas no llegan (sin red, o el servidor de OSM
+                      // corta), se dice una vez en vez de dejar cuadros grises
+                      // mudos que parecen un fallo de la app.
+                      errorTileCallback: (tesela, error, pila) {
+                        if (_notaTeselas != null || !mounted) return;
+                        setState(() => _notaTeselas =
+                            'El mapa de fondo no está cargando (¿sin conexión?). La '
+                            'lista de sitios funciona igual si ya se pidió.');
+                      },
                     ),
                     MarkerLayer(
                       markers: [
@@ -276,6 +300,8 @@ class _PantallaMapaState extends State<PantallaMapa> {
               children: [
                 if (_notaUbicacion != null)
                   Recuadro(_notaUbicacion!, tono: TonoEstado.neutro),
+                if (_notaTeselas != null)
+                  Recuadro(_notaTeselas!, tono: TonoEstado.neutro),
                 if (_fallo != null)
                   Recuadro('No he podido pedir los sitios.',
                       consejo: _fallo, tono: TonoEstado.atencion),

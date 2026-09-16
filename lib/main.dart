@@ -1,22 +1,24 @@
-/// MI VEHÍCULO — app nativa de Android. Versión 1.0.0: la vista del cliente.
+/// MI VEHÍCULO — app nativa de Android. Versión 1.1.0: la vista del cliente.
 ///
 /// Cinco pestañas: Inicio, Diario, OBD, Mapa y Perfil. Todo lo que sabe
 /// hacer la web para el dueño del coche, más lo que la web no puede: hablar
 /// con un ELM327 por Bluetooth clásico. Sin nada de talleres: el panel del
 /// taller sigue en la web.
 ///
-/// LAS DOS REGLAS QUE MANDAN AQUÍ:
+/// LAS REGLAS QUE MANDAN AQUÍ:
 ///
 /// 1. El móvil es la verdad y la nube es la copia. La app arranca, funciona y
 ///    guarda sin cuenta y sin red. Con cuenta, cada cambio se sube en cuanto
 ///    hay red (con tres segundos de calma para no subir tecla a tecla), y al
 ///    entrar o al volver a la app se baja lo que haya de otros aparatos.
 ///
-/// 2. El OBD se lee al ABRIR la app, una vez, y se cierra. Si el lector
-///    contesta es que estás en el coche con el contacto dado —el lector se
-///    alimenta del propio conector—, y esa lectura se guarda sola en las
-///    lecturas. Eso es "saber cuándo conduces" sin dejar nada escuchando en
-///    segundo plano, que gasta batería y coge el puerto para todo el mundo.
+/// 2. El OBD se lee al ABRIR la app, una vez, y se cierra; en vivo solo
+///    mientras se mira la pestaña; y en segundo plano solo si el dueño lo ha
+///    encendido en «Lectura automática», que explica lo que cuesta. Nunca un
+///    servicio permanente escuchando.
+///
+/// 3. La app se actualiza sola desde las releases de GitHub: comprueba con
+///    calma (cada seis horas), avisa, y descarga e instala cuando se le dice.
 library;
 
 import 'dart:async';
@@ -25,9 +27,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'datos/actualizacion.dart';
 import 'datos/almacen.dart';
 import 'datos/nube.dart';
 import 'estado.dart';
+import 'obd/lectura_fondo.dart';
 import 'pantalla_obd.dart';
 import 'pantallas/acceso.dart';
 import 'pantallas/diario.dart';
@@ -40,13 +44,22 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final almacen = Almacen();
   await almacen.cargar();
-  runApp(MiVehiculoApp(almacen: almacen, nube: Nube()));
+  // Registra con Android la función que ejecuta las lecturas en segundo
+  // plano. Es solo el registro: no lee nada hasta que el dueño lo encienda.
+  await prepararLecturaEnFondo();
+  runApp(MiVehiculoApp(almacen: almacen, nube: Nube(), actualizacion: Actualizacion()));
 }
 
 class MiVehiculoApp extends StatefulWidget {
   final Almacen almacen;
   final Nube nube;
-  const MiVehiculoApp({super.key, required this.almacen, required this.nube});
+  final Actualizacion actualizacion;
+  const MiVehiculoApp({
+    super.key,
+    required this.almacen,
+    required this.nube,
+    required this.actualizacion,
+  });
 
   @override
   State<MiVehiculoApp> createState() => _MiVehiculoAppState();
@@ -61,6 +74,7 @@ class _MiVehiculoAppState extends State<MiVehiculoApp> with WidgetsBindingObserv
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     widget.nube.recuperarSesion().then((_) => widget.nube.sincronizar(widget.almacen));
+    widget.actualizacion.comprobar();
     // Cada cambio del usuario dispara una subida, con calma: escribir una
     // nota de tres frases no son tres subidas.
     _escucha = widget.almacen.cambios.listen((_) {
@@ -71,8 +85,13 @@ class _MiVehiculoAppState extends State<MiVehiculoApp> with WidgetsBindingObserv
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState estado) {
-    // Al volver a la app se mira si hay algo nuevo en la cuenta.
-    if (estado == AppLifecycleState.resumed) widget.nube.sincronizar(widget.almacen);
+    // Al volver a la app se mira si hay algo nuevo en la cuenta, y —con la
+    // calma de seis horas— si hay una versión nueva. También se recarga el
+    // almacén por si una lectura en segundo plano guardó algo mientras tanto.
+    if (estado == AppLifecycleState.resumed) {
+      widget.almacen.recargar().then((_) => widget.nube.sincronizar(widget.almacen));
+      widget.actualizacion.comprobar();
+    }
   }
 
   @override
@@ -88,6 +107,7 @@ class _MiVehiculoAppState extends State<MiVehiculoApp> with WidgetsBindingObserv
     return Estado(
       almacen: widget.almacen,
       nube: widget.nube,
+      actualizacion: widget.actualizacion,
       child: MaterialApp(
         title: 'Mi Vehículo',
         debugShowCheckedModeBanner: false,
@@ -152,7 +172,8 @@ class _ConchaState extends State<Concha> {
         children: [
           PantallaInicio(irA: _irA),
           const PantallaDiario(),
-          const PantallaObd(),
+          // La pestaña del OBD sabe si se la está mirando: en vivo solo entonces.
+          PantallaObd(activa: _pestana == 2),
           const PantallaMapa(),
           const PantallaPerfil(),
         ],

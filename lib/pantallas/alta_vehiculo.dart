@@ -37,12 +37,46 @@ class _PantallaAltaVehiculoState extends State<PantallaAltaVehiculo> {
   late final TextEditingController _anio;
   late final TextEditingController _km;
   late final TextEditingController _matriculacion;
+
+  /// LOS FOCOS VIVEN AQUÍ, no se crean al pintar. La primera versión hacía
+  /// `FocusNode()` dentro del builder del autocompletar, y como cada tecla
+  /// repinta la pantalla, cada tecla creaba un foco nuevo: al tocar otro
+  /// campo con el dedo el foco se perdía y no dejaba escribir; solo el Enter
+  /// del teclado funcionaba. Se notó en el coche, con el formulario delante.
+  final _focoMarca = FocusNode();
+  final _focoModelo = FocusNode();
   String _combustible = '';
   String _adBlue = 'auto';
   Catalogo? _catalogo;
   bool _cargandoCatalogo = true;
   String? _notaMatricula;
+  String? _notaAnio;
+
+  /// La motorización elegida en el desplegable (su etiqueta larga). No se
+  /// guarda en el coche —lo que se guarda es el combustible—, pero hay que
+  /// recordarla para que el desplegable enseñe lo que se eligió.
+  String? _motorElegido;
   bool _guardando = false;
+
+  /// EL AÑO QUE ESCRIBE EL DUEÑO MANDA sobre lo que diga la matrícula. La
+  /// matrícula data la matriculación EN ESPAÑA: un coche importado de segunda
+  /// mano lleva matrícula del día que llegó, y para la ITV cuenta su primera
+  /// matriculación en origen. Si el año escrito no cuadra con el de la
+  /// matrícula, se deja de fiar de la matrícula para la fecha y se dice.
+  void _alCambiarAnio(String texto) {
+    final anio = int.tryParse(texto.trim());
+    setState(() {
+      _notaAnio = null;
+      if (anio == null) return;
+      final f = fechaDeMatricula(_matricula.text);
+      if (f != null && f.anio != anio) {
+        if (_matriculacion.text.startsWith('${f.anio}-')) _matriculacion.clear();
+        _notaAnio = 'La matrícula apunta a ${f.anio}, pero manda el año que pongas. '
+            'Si el coche vino de fuera, pon abajo el mes de su primera '
+            'matriculación en origen: es el que vale para la ITV.';
+      }
+    });
+  }
 
   bool get _esEdicion => widget.editar != null;
 
@@ -76,6 +110,8 @@ class _PantallaAltaVehiculoState extends State<PantallaAltaVehiculo> {
     _anio.dispose();
     _km.dispose();
     _matriculacion.dispose();
+    _focoMarca.dispose();
+    _focoModelo.dispose();
     super.dispose();
   }
 
@@ -190,6 +226,7 @@ class _PantallaAltaVehiculoState extends State<PantallaAltaVehiculo> {
               const SizedBox(height: 16),
               _autocompletar(
                 controlador: _marca,
+                foco: _focoMarca,
                 etiqueta: 'Marca',
                 opciones: _marcas,
                 alElegir: (_) => setState(() {
@@ -199,6 +236,7 @@ class _PantallaAltaVehiculoState extends State<PantallaAltaVehiculo> {
               const SizedBox(height: 12),
               _autocompletar(
                 controlador: _modelo,
+                foco: _focoModelo,
                 etiqueta: 'Modelo',
                 opciones: _modelos,
                 alElegir: (_) => setState(() {}),
@@ -211,7 +249,7 @@ class _PantallaAltaVehiculoState extends State<PantallaAltaVehiculo> {
                       controller: _anio,
                       keyboardType: TextInputType.number,
                       decoration: const InputDecoration(labelText: 'Año'),
-                      onChanged: (_) => setState(() {}),
+                      onChanged: _alCambiarAnio,
                       validator: (t) {
                         final n = int.tryParse((t ?? '').trim());
                         if (n == null) return 'Pon el año';
@@ -230,27 +268,45 @@ class _PantallaAltaVehiculoState extends State<PantallaAltaVehiculo> {
                   ),
                 ],
               ),
+              if (_notaAnio != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6, left: 4),
+                  child: Text(_notaAnio!,
+                      style: const TextStyle(fontSize: 12, color: Tono.naranjaTinta)),
+                ),
               const SizedBox(height: 12),
               if (motores.isNotEmpty) ...[
                 DropdownButtonFormField<String>(
-                  initialValue: motores.any((m) => m.etiqueta == _combustible) ? _combustible : null,
+                  key: ValueKey('motor-${_marca.text}-${_modelo.text}'),
+                  initialValue: motores.any((m) => m.etiquetaLarga == _motorElegido)
+                      ? _motorElegido
+                      : null,
+                  isExpanded: true,
                   decoration: const InputDecoration(labelText: 'Motor'),
                   items: motores
                       .map((m) => DropdownMenuItem(
-                            value: m.etiqueta,
-                            child: Text(m.etiqueta, overflow: TextOverflow.ellipsis),
+                            value: m.etiquetaLarga,
+                            child: Text(
+                              m.detalle.isEmpty ? m.etiquetaLarga : '${m.etiquetaLarga} · ${m.detalle}',
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ))
                       .toList(),
                   onChanged: (v) {
                     if (v == null) return;
-                    final m = motores.firstWhere((x) => x.etiqueta == v);
-                    setState(() => _combustible = m.combustible);
+                    final m = motores.firstWhere((x) => x.etiquetaLarga == v);
+                    setState(() {
+                      _motorElegido = v;
+                      _combustible = m.combustible;
+                    });
                   },
                   hint: const Text('Elige la motorización'),
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Motorizaciones vendidas en España para ese modelo. '
+                  'Todas las motorizaciones vendidas en España para ese modelo, '
+                  'las de tu año primero, con sus años de venta. Los cm³ ayudan a '
+                  'reconocerla (1.560 cm³ es el 1.6 HDi, por ejemplo). '
                   'Combustible elegido: ${_combustible.isEmpty ? '—' : _combustible}.',
                   style: const TextStyle(fontSize: 12, color: Tono.tintaSuave),
                 ),
@@ -342,13 +398,14 @@ class _PantallaAltaVehiculoState extends State<PantallaAltaVehiculo> {
 
   Widget _autocompletar({
     required TextEditingController controlador,
+    required FocusNode foco,
     required String etiqueta,
     required List<String> Function(String) opciones,
     required void Function(String) alElegir,
   }) {
     return RawAutocomplete<String>(
       textEditingController: controlador,
-      focusNode: FocusNode(),
+      focusNode: foco,
       optionsBuilder: (t) => opciones(t.text),
       onSelected: alElegir,
       fieldViewBuilder: (context, c, foco, alEnviar) => TextFormField(

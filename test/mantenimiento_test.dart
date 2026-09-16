@@ -49,6 +49,33 @@ void main() {
     test('sin año no hay ITV que calcular', () {
       expect(proximaItv(null, '', hoyPara: hoy), isNull);
     });
+
+    /// LA ÚLTIMA ITV ANOTADA MANDA. La pegatina caduca desde la inspección,
+    /// no desde el cumpleaños del coche, y nadie la pasa el día justo.
+    test('con una ITV anotada, se cuenta desde ella', () {
+      // Matriculado 2019-06; ITV pasada el 2025-08-20 con 6 años → vale 2
+      final itv = proximaItv(2019, '2019-06', hoyPara: hoy, ultimaItv: '2025-08-20')!;
+      expect(itv.desdeUltima, isTrue);
+      expect(itv.anio, 2027);
+      expect(itv.mes, 8);
+      expect(itv.vencida, isFalse);
+    });
+
+    test('con diez años o más, la validez es de un año', () {
+      // Matriculado 2014-03; ITV el 2025-05-10 con 11 años → vale 1 → 2026-05
+      final itv = proximaItv(2014, '2014-03', hoyPara: hoy, ultimaItv: '2025-05-10')!;
+      expect(itv.anio, 2026);
+      expect(itv.mes, 5);
+      expect(itv.vencida, isTrue, reason: 'hoy es sep 2026: caducada');
+    });
+
+    test('la ITV caducada sale como urgente y lo dice', () {
+      final v = Vehiculo(id: 'v1', anio: 2014, matriculacion: '2014-03', km: 1000);
+      final diario = [Intervencion(vehiculoId: 'v1', fecha: '2025-05-10', tipo: 'itv')];
+      final a = avisosDe(v, diario, hoyPara: hoy).firstWhere((x) => x.clave == 'itv');
+      expect(a.urgencia, Urgencia.alta);
+      expect(a.detalle, contains('Caducada'));
+    });
   });
 
   group('los avisos', () {

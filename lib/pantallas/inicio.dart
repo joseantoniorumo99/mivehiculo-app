@@ -58,6 +58,25 @@ class _PantallaInicioState extends State<PantallaInicio> {
               children: [
                 _cabecera(context, coche.nombre, coche.matricula, almacen.variosVehiculos),
                 const SizedBox(height: 14),
+                // Si hay versión nueva, se dice aquí, donde se mira. Instalar
+                // vive en el perfil: un botón de descarga en la portada es
+                // demasiado fácil de tocar sin querer.
+                ListenableBuilder(
+                  listenable: context.actualizacion,
+                  builder: (context, _) {
+                    final a = context.actualizacion;
+                    if (!a.hayNueva) return const SizedBox.shrink();
+                    return Recuadro(
+                      'Hay una versión nueva: ${a.versionNueva}',
+                      consejo: 'Se instala desde Perfil → Versión, en un minuto.',
+                      tono: TonoEstado.accion,
+                      accion: TextButton(
+                        onPressed: () => widget.irA('perfil'),
+                        child: const Text('Ir al perfil'),
+                      ),
+                    );
+                  },
+                ),
                 _selectorPeriodo(),
                 const SizedBox(height: 14),
                 _rejilla(context, metricas),

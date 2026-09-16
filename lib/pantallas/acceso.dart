@@ -129,6 +129,16 @@ class _PantallaAccesoState extends State<PantallaAcceso> {
               TextFormField(
                 controller: _clave,
                 obscureText: !_verClave,
+
+                /// SIN CORRECTOR NI SUGERENCIAS. Un teclado como el de Samsung
+                /// "corrige" lo que escribes en un campo normal aunque vaya
+                /// oculto, y una contraseña corregida es una contraseña
+                /// distinta: el usuario la tecleaba bien y no entraba, hasta
+                /// que la cambió por otra. No era la contraseña, era el
+                /// corrector.
+                autocorrect: false,
+                enableSuggestions: false,
+                keyboardType: TextInputType.visiblePassword,
                 decoration: InputDecoration(
                   labelText: 'Contraseña',
                   helperText: _creando ? 'Al menos 8 caracteres' : null,

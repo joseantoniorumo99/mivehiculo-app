@@ -14,6 +14,7 @@ import 'acceso.dart';
 import 'citas.dart';
 import 'expediente.dart';
 import 'garaje.dart';
+import 'lectura_automatica.dart';
 import 'lecturas.dart';
 
 class PantallaPerfil extends StatelessWidget {
@@ -27,7 +28,7 @@ class PantallaPerfil extends StatelessWidget {
       appBar: AppBar(title: const Text('Perfil')),
       body: SafeArea(
         child: ListenableBuilder(
-          listenable: Listenable.merge([almacen, nube]),
+          listenable: Listenable.merge([almacen, nube, context.actualizacion]),
           builder: (context, _) => ListView(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
             children: [
@@ -43,14 +44,18 @@ class PantallaPerfil extends StatelessWidget {
                   '${almacen.lecturasDelCoche.length} guardadas', const PantallaLecturas()),
               _enlace(context, Icons.folder_open_outlined, 'Expediente',
                   'El historial completo, para compartir', const PantallaExpediente()),
+              _enlace(context, Icons.autorenew, 'Lectura automática',
+                  'Cuándo lee el OBD sola, y lo que cuesta', const PantallaLecturaAutomatica()),
+              const TituloSeccion('Versión'),
+              _actualizacion(context),
               const TituloSeccion('Sobre la app'),
               const Tarjeta(
                 child: Text(
-                  'Mi Vehículo · 1.0.0\n\n'
                   'Tus datos son tuyos: viven en este móvil y, si tienes cuenta, en '
                   'ella. No hay anuncios ni se vende nada a nadie. El lector OBD se '
-                  'lee al abrir la app si el coche tiene el contacto dado, y nunca en '
-                  'segundo plano.\n\n'
+                  'lee al abrir la app si el coche tiene el contacto dado, en vivo '
+                  'mientras miras la pestaña, y en segundo plano solo si tú lo '
+                  'enciendes.\n\n'
                   'Mapas y sitios: © OpenStreetMap y sus colaboradores (ODbL). '
                   'Catálogo de coches: Agencia Europea de Medio Ambiente.',
                   style: TextStyle(color: Tono.tintaSuave, height: 1.45),
@@ -207,6 +212,69 @@ class PantallaPerfil extends StatelessWidget {
                 style: const TextStyle(fontSize: 12, color: Tono.tintaSuave),
               ),
             ),
+        ],
+      ),
+    );
+  }
+
+  /// La versión, y la nueva si la hay. La comprobación de fondo es cada seis
+  /// horas; el botón la fuerza. Instalar abre el instalador del sistema, que
+  /// pide permiso la primera vez y conserva los datos: misma firma, misma app.
+  Widget _actualizacion(BuildContext context) {
+    final a = context.actualizacion;
+    a.leerVersionActual();
+    return Tarjeta(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Mi Vehículo ${a.versionActual.isEmpty ? '' : a.versionActual}',
+                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                ),
+              ),
+              if (a.hayNueva)
+                ChipEstado('Nueva: ${a.versionNueva}', tono: TonoEstado.accion)
+              else if (!a.comprobando && a.ultimaComprobacion != null)
+                const ChipEstado('Al día', tono: TonoEstado.calma),
+            ],
+          ),
+          if (a.hayNueva) ...[
+            const SizedBox(height: 8),
+            if (a.notas.trim().isNotEmpty)
+              Text(a.notas.trim(),
+                  maxLines: 6,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Tono.tintaSuave, height: 1.4)),
+            const SizedBox(height: 10),
+            if (a.descargando) ...[
+              LinearProgressIndicator(value: a.progreso, minHeight: 6, borderRadius: BorderRadius.circular(3)),
+              const SizedBox(height: 6),
+              Text('Descargando… ${(a.progreso * 100).round()} %',
+                  style: const TextStyle(fontSize: 12, color: Tono.tintaSuave)),
+            ] else
+              FilledButton.icon(
+                onPressed: () async {
+                  final motivo = await a.descargarEInstalar();
+                  if (motivo != null && context.mounted) avisar(context, motivo);
+                },
+                icon: const Icon(Icons.system_update),
+                label: Text('Descargar e instalar ${a.versionNueva}'
+                    '${a.tamanoApk > 0 ? ' · ${(a.tamanoApk / 1048576).round()} MB' : ''}'),
+              ),
+          ],
+          if (a.error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(a.error!, style: const TextStyle(fontSize: 12, color: Tono.naranjaTinta)),
+            ),
+          const SizedBox(height: 6),
+          TextButton(
+            onPressed: a.comprobando ? null : () => a.comprobar(forzar: true),
+            child: Text(a.comprobando ? 'Comprobando…' : 'Buscar una versión nueva'),
+          ),
         ],
       ),
     );

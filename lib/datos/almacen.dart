@@ -91,6 +91,19 @@ class Almacen extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Vuelve a leer lo guardado. Hace falta porque una lectura en SEGUNDO
+  /// PLANO escribe desde otro motor Dart: este objeto no se entera, y al
+  /// volver a la app enseñaría el diario de antes. Como aquí cada cambio se
+  /// guarda al momento, no hay nada en memoria que perder al releer.
+  Future<void> recargar() async {
+    if (!_cargado) return;
+    final p = await SharedPreferences.getInstance();
+    await p.reload();
+    final texto = p.getString(_clave);
+    if (texto != null && texto.isNotEmpty) _leerJson(texto);
+    notifyListeners();
+  }
+
   void _leerJson(String texto) {
     try {
       final j = jsonDecode(texto) as Map<String, dynamic>;

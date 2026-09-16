@@ -2,37 +2,87 @@
 ///
 /// Desde septiembre de 2000 las matrículas se emiten en serie y sin saltos:
 /// 0000 BBB, 0001 BBB… 9999 BBB, 0000 BCB, y así. Así que la posición de la
-/// serie en esa secuencia es una fecha disfrazada. Interpolando entre anclas
-/// conocidas —la primera serie emitida en enero de cada año— sale el mes con
-/// bastante acierto.
+/// serie en esa secuencia es una fecha disfrazada.
 ///
-/// PARA QUÉ SIRVE ESTO DE VERDAD: con el mes de matriculación la ITV se dice
-/// exacta ("toca en jun de 2027") en vez de aproximada ("hacia 2027"). Es la
-/// diferencia entre un aviso al que se hace caso y uno que se ignora, y sale
-/// gratis de un dato que el dueño ya tiene en el bolsillo.
+/// ANTES SE INTERPOLABA entre una ancla por año, y eso daba errores de hasta
+/// dos años en los meses lejos del ancla: un C3 de 2018 salió como de 2020.
+/// Ahora se usa la TABLA MENSUAL completa —la última serie asignada al final
+/// de cada mes desde 2000— y la fecha sale al mes, sin interpolar. La fuente
+/// son las tablas públicas que publican los sitios que siguen las series de
+/// la DGT (fechamatriculacion.es y otros), contrastadas entre sí.
 ///
 /// LO QUE ESTO NO ES: no es la ficha técnica. Marca, modelo y motor NO se
-/// pueden sacar de la matrícula sin la DGT o un proveedor de pago, y por eso
-/// la app pide esos tres a mano en vez de inventarlos. Las anclas son
-/// orientativas (tablas públicas de series por mes, contrastadas entre sí):
-/// la fecha oficial solo la da la ficha técnica o un informe de la DGT, y la
-/// app lo dice cuando la usa.
+/// pueden sacar de la matrícula sin la DGT o un proveedor de pago. Y la fecha
+/// que sale es la de la matriculación EN ESPAÑA: un coche importado de
+/// segunda mano lleva matrícula del día que llegó, no del día que se fabricó,
+/// y para la ITV cuenta su primera matriculación en origen. Por eso el año
+/// que escriba el dueño manda sobre lo que diga la matrícula.
 library;
 
 const String _letras = 'BCDFGHJKLMNPRSTVWXYZ';
 
-/// Primera serie emitida en enero de cada año. El primer par no es enero: es
-/// el 18 de septiembre de 2000, el día que arrancó el sistema.
-const List<List<Object>> _anclas = [
-  ['BBB', 2000.71],
-  ['BDS', 2001.0], ['BSM', 2002.0], ['CDW', 2003.0], ['CRW', 2004.0],
-  ['DFG', 2005.0], ['DVX', 2006.0], ['FKZ', 2007.0], ['FZS', 2008.0],
-  ['GKT', 2009.0], ['GTD', 2010.0], ['HBR', 2011.0], ['HJD', 2012.0],
-  ['HNV', 2013.0], ['HVP', 2014.0], ['JCK', 2015.0], ['JLB', 2016.0],
-  ['JWP', 2017.0], ['KHH', 2018.0], ['KTK', 2019.0], ['LFJ', 2020.0],
-  ['LMM', 2021.0], ['LWF', 2022.0], ['MDT', 2023.0], ['MNC', 2024.0],
-  ['MYD', 2025.0], ['NKG', 2026.0],
+/// Última serie asignada al final de cada mes, desde el arranque del sistema
+/// (18 de septiembre de 2000). Una entrada por mes, sin saltos: la posición
+/// en la lista ES el mes.
+const List<String> _finDeMes = [
+  // 2000 (sep-dic)
+  'BCD', 'BCY', 'BDR', 'BDR',
+  // 2001
+  'BFJ', 'BGF', 'BHG', 'BJC', 'BKB', 'BLC', 'BMF', 'BMW', 'BNL', 'BPG', 'BRB', 'BRT',
+  // 2002
+  'BSL', 'BTF', 'BTZ', 'BVW', 'BWT', 'BXP', 'BYP', 'BZF', 'BZV', 'CBP', 'CCH', 'CDC',
+  // 2003
+  'CDV', 'CFM', 'CGJ', 'CHF', 'CJC', 'CKB', 'CLD', 'CLV', 'CMM', 'CNK', 'CPF', 'CRC',
+  // 2004
+  'CRV', 'CSS', 'CTT', 'CVR', 'CWR', 'CXT', 'CYY', 'CZP', 'DBJ', 'DCH', 'DDG', 'DFF',
+  // 2005
+  'DFZ', 'DGX', 'DHZ', 'DKB', 'DLD', 'DMJ', 'DNP', 'DPK', 'DRG', 'DSC', 'DTB', 'DVB',
+  // 2006
+  'DVW', 'DWT', 'DXZ', 'DYY', 'FBC', 'FCJ', 'FDP', 'FFK', 'FGF', 'FHD', 'FJD', 'FKC',
+  // 2007
+  'FKY', 'FLV', 'FNB', 'FNZ', 'FRC', 'FSJ', 'FTP', 'FVJ', 'FWC', 'FXB', 'FXY', 'FYY',
+  // 2008
+  'FZR', 'GBN', 'GCK', 'GDH', 'GFC', 'GFY', 'GGV', 'GHG', 'GHT', 'GJJ', 'GJV', 'GKH',
+  // 2009
+  'GKS', 'GLC', 'GLP', 'GMC', 'GMN', 'GNF', 'GNY', 'GPJ', 'GPW', 'GRM', 'GSC', 'GSR',
+  // 2010
+  'GTC', 'GTS', 'GVM', 'GWC', 'GWV', 'GXP', 'GYD', 'GYM', 'GYX', 'GZJ', 'GZT', 'HBG',
+  // 2011
+  'HBP', 'HCB', 'HCR', 'HDC', 'HDR', 'HFF', 'HFT', 'HGC', 'HGM', 'HGX', 'HHH', 'HHT',
+  // 2012
+  'HJC', 'HJM', 'HKB', 'HKL', 'HKX', 'HLK', 'HLW', 'HMD', 'HML', 'HMT', 'HNC', 'HNK',
+  // 2013
+  'HNT', 'HPC', 'HPN', 'HPY', 'HRK', 'HRX', 'HSK', 'HSS', 'HSZ', 'HTK', 'HTV', 'HVF',
+  // 2014
+  'HVN', 'HVZ', 'HWM', 'HXB', 'HXN', 'HYD', 'HYT', 'HZB', 'HZL', 'HZZ', 'JBL', 'JBY',
+  // 2015
+  'JCK', 'JCY', 'JDR', 'JFG', 'JFX', 'JGR', 'JHJ', 'JHT', 'JJH', 'JJW', 'JKK', 'JKZ',
+  // 2016
+  'JLN', 'JMF', 'JMY', 'JNR', 'JPK', 'JRG', 'JRZ', 'JSK', 'JTB', 'JTN', 'JVH', 'JVZ',
+  // 2017
+  'JWN', 'JXF', 'JYB', 'JYT', 'JZP', 'KBM', 'KCH', 'KCT', 'KDH', 'KFC', 'KFW', 'KGN',
+  // 2018
+  'KHG', 'KHY', 'KJV', 'KKR', 'KLN', 'KMM', 'KNK', 'KPD', 'KPS', 'KRJ', 'KRZ', 'KSS',
+  // 2019
+  'KTJ', 'KVB', 'KVX', 'KWT', 'KXR', 'KYN', 'KZK', 'KZY', 'LBN', 'LCG', 'LCY', 'LDR',
+  // 2020
+  'LFH', 'LFY', 'LGG', 'LGH', 'LGP', 'LHG', 'LJD', 'LJR', 'LKF', 'LKV', 'LLJ', 'LMC',
+  // 2021
+  'LML', 'LMX', 'LNN', 'LPD', 'LPW', 'LRP', 'LSF', 'LSP', 'LTD', 'LTP', 'LVD', 'LVV',
+  // 2022
+  'LWD', 'LWR', 'LXD', 'LXS', 'LYJ', 'LYZ', 'LZP', 'LZZ', 'MBN', 'MBZ', 'MCR', 'MDD',
+  // 2023
+  'MDS', 'MFG', 'MFX', 'MGN', 'MHG', 'MHY', 'MJR', 'MKD', 'MKP', 'MLH', 'MLY', 'MMN',
+  // 2024
+  'MNC', 'MNT', 'MPL', 'MRD', 'MRW', 'MSS', 'MTK', 'MTV', 'MVL', 'MWD', 'MWS', 'MXP',
+  // 2025
+  'MYC', 'MYV', 'MZS', 'NBL', 'NCG', 'NDG', 'NFC', 'NFR', 'NGJ', 'NHC', 'NHX', 'NJS',
+  // 2026 (ene-abr)
+  'NKF', 'NKY', 'NMZ', 'NPZ',
 ];
+
+const int _primerAnio = 2000;
+const int _primerMes = 9;
 
 /// "KYT" -> posición en la secuencia (0 = BBB). Es base 20 con las consonantes
 /// como dígitos.
@@ -74,49 +124,39 @@ String formatearMatricula(String matricula) {
 class FechaMatricula {
   final int anio;
   final int mes; // 1-12
-  const FechaMatricula(this.anio, this.mes);
+
+  /// False cuando la serie es más nueva que el último mes de la tabla y se ha
+  /// extrapolado siguiendo el ritmo de los últimos meses.
+  final bool exacta;
+  const FechaMatricula(this.anio, this.mes, {this.exacta = true});
 
   /// "AAAA-MM", que es justo lo que guarda el vehículo y lo que necesita el
   /// cálculo de la ITV.
   String get iso => '$anio-${mes.toString().padLeft(2, '0')}';
 }
 
-/// Fecha aproximada de primera matriculación, interpolando entre anclas.
-/// Devuelve null cuando no se puede datar: formato antiguo, letras raras, o
-/// una serie anterior al arranque del sistema.
+/// Mes de la primera matriculación en España, buscando la serie en la tabla
+/// mensual. Devuelve null cuando no se puede datar: formato antiguo o letras
+/// que no son del sistema.
 FechaMatricula? fechaDeMatricula(String matricula) {
   final p = partesDeMatricula(matricula);
   if (p == null) return null;
   final indice = indiceDeSerie(p.serie);
   if (indice == null) return null;
 
-  final anclas = _anclas
-      .map((a) => [indiceDeSerie(a[0] as String)!, a[1] as double])
-      .toList();
-
-  double? momento;
-  for (var i = 0; i < anclas.length - 1; i++) {
-    final iA = anclas[i][0] as int, mA = anclas[i][1] as double;
-    final iB = anclas[i + 1][0] as int, mB = anclas[i + 1][1] as double;
-    if (indice >= iA && indice < iB) {
-      momento = mA + ((indice - iA) / (iB - iA)) * (mB - mA);
-      break;
+  for (var i = 0; i < _finDeMes.length; i++) {
+    final fin = indiceDeSerie(_finDeMes[i])!;
+    if (indice <= fin) {
+      final meses = (_primerMes - 1) + i;
+      return FechaMatricula(_primerAnio + meses ~/ 12, (meses % 12) + 1);
     }
   }
 
-  // Posterior a la última ancla: se sigue el ritmo del último tramo.
-  if (momento == null) {
-    final iUlt = anclas.last[0] as int, mUlt = anclas.last[1] as double;
-    final iPen = anclas[anclas.length - 2][0] as int;
-    final mPen = anclas[anclas.length - 2][1] as double;
-    if (indice < iPen) return null; // anterior a 2000: sin datar
-    final ritmo = (iUlt - iPen) / (mUlt - mPen); // series por año
-    momento = mUlt + (indice - iUlt) / ritmo;
-  }
-
-  final anio = momento.floor();
-  var mes = ((momento - anio) * 12).floor();
-  if (mes < 0) mes = 0;
-  if (mes > 11) mes = 11;
-  return FechaMatricula(anio, mes + 1);
+  // Más nueva que la tabla: se sigue el ritmo de los últimos doce meses.
+  final ultimo = indiceDeSerie(_finDeMes.last)!;
+  final hace12 = indiceDeSerie(_finDeMes[_finDeMes.length - 13])!;
+  final porMes = (ultimo - hace12) / 12;
+  final mesesDeMas = porMes <= 0 ? 0 : ((indice - ultimo) / porMes).ceil();
+  final meses = (_primerMes - 1) + (_finDeMes.length - 1) + mesesDeMas;
+  return FechaMatricula(_primerAnio + meses ~/ 12, (meses % 12) + 1, exacta: false);
 }
