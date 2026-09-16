@@ -35,7 +35,23 @@ abstract class EnlaceSerie {
 class AparatoBluetooth {
   final String nombre;
   final String direccion;
-  const AparatoBluetooth(this.nombre, this.direccion);
+
+  /// Si ya está vinculado con este móvil. Un aparato encontrado y NO
+  /// emparejado se puede usar igual —la app lo empareja al conectar—, pero
+  /// saberlo cambia lo que se le promete al usuario: con uno emparejado la
+  /// conexión es directa; con uno nuevo va a salir el diálogo del PIN.
+  final bool emparejado;
+
+  /// Fuerza de la señal en dBm cuando viene de una búsqueda (-40 es pegado,
+  /// -90 es al límite). Null en los emparejados, que no se están anunciando.
+  final int? senal;
+
+  const AparatoBluetooth(
+    this.nombre,
+    this.direccion, {
+    this.emparejado = false,
+    this.senal,
+  });
 
   /// Los ELM327 se anuncian con nombres muy repetidos. No sirve para filtrar
   /// —hay clones que se llaman cualquier cosa— pero sí para ordenar la lista
@@ -153,6 +169,11 @@ class TransporteSimulado implements Transporte {
   });
 
   static const Map<int, List<int>> _crudos = {
+    /// El testigo apagado y sin códigos. Los tres bytes siguientes son los
+    /// monitores de a bordo, que aquí van a cero: el simulador no se inventa
+    /// un estado de diagnóstico que no significaría nada.
+    0x01: [0x00, 0x07, 0xE5, 0x00],
+    0x03: [0x02, 0x00], // bucle cerrado, usando la sonda
     0x04: [0x2E],
     0x05: [0x7D], // 125 - 40 = 85 °C, un motor caliente
     0x0B: [0x63],
@@ -161,6 +182,10 @@ class TransporteSimulado implements Transporte {
     0x0F: [0x3C],
     0x10: [0x01, 0x2C],
     0x11: [0x24],
+    0x13: [0x33], // dos sondas por banco, las dos primeras de cada uno
+    0x14: [0x8C, 0x80], // 0,70 V
+    0x15: [0x1A, 0x80], // 0,13 V: la de detrás del catalizador, plana
+    0x1C: [0x06], // EOBD, que es lo que lleva un coche europeo
     0x1F: [0x03, 0x84],
     0x21: [0x00, 0x00],
     0x2F: [0xB4],

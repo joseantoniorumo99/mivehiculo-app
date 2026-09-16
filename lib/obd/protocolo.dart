@@ -18,15 +18,36 @@ library;
 
 /// Un PID del modo 01: cuántos bytes devuelve y cómo se convierten en un
 /// número. A, B, C, D es como los nombra el estándar.
+///
+/// NO TODO DATO ES UN NÚMERO. Unos cuantos PID del estándar son mapas de bits
+/// o enumerados: a qué norma OBD responde el coche, en qué modo está el
+/// sistema de combustible, qué sondas lambda monta. Ésos llevan `describir` en
+/// lugar de `calcular` y valen tanto como los demás — el que dice si el
+/// testigo del motor está encendido y cuántos códigos hay guardados es, de
+/// hecho, el más útil de todos, y hasta hoy la app no lo pedía.
 class Pid {
   final String nombre;
   final String unidad;
   final int bytes;
-  final double Function(List<int> b) calcular;
-  const Pid(this.nombre, this.unidad, this.bytes, this.calcular);
+  final double Function(List<int> b)? calcular;
+  final String Function(List<int> b)? describir;
+
+  const Pid(this.nombre, this.unidad, this.bytes, this.calcular)
+      : describir = null;
+
+  const Pid.texto(this.nombre, this.bytes, this.describir)
+      : unidad = '',
+        calcular = null;
 }
 
 const Map<int, Pid> pids = {
+  /// EL TESTIGO DEL MOTOR Y CUÁNTOS CÓDIGOS HAY. Lo soporta absolutamente
+  /// todo coche con OBD-II —es el primer PID del estándar— y la app no lo
+  /// pedía: se leían los códigos por el modo 03 pero no se decía si la luz
+  /// estaba encendida, que es lo primero que quiere saber cualquiera.
+  0x01: Pid.texto('Testigo del motor', 4, _testigo),
+
+  0x03: Pid.texto('Sistema de combustible', 2, _sistemaCombustible),
   0x04: Pid('Carga del motor', '%', 1, _carga),
   0x05: Pid('Temperatura del refrigerante', '°C', 1, _menos40),
   0x06: Pid('Ajuste de mezcla corto (banco 1)', '%', 1, _ajuste),
@@ -47,23 +68,61 @@ const Map<int, Pid> pids = {
   /// El que sí baja a cero es el 0x45 (relativa) o el 0x5A (pedal).
   0x11: Pid('Mariposa (posición absoluta)', '%', 1, _carga),
 
+  0x12: Pid.texto('Aire secundario', 1, _aireSecundario),
+  0x13: Pid.texto('Sondas lambda montadas', 1, _sondas),
+
+  /// LAS SONDAS LAMBDA, UNA A UNA. Son ocho PID seguidos y casi todos los
+  /// coches dan al menos dos. Cada uno trae la tensión de la sonda (A/200 V)
+  /// y el ajuste de mezcla que esa sonda provoca. Faltaban enteros: en un
+  /// Opel real el coche anunciaba 0x14 y 0x15 y la app no los pedía.
+  0x14: Pid('Sonda 1 · tensión', 'V', 2, _tensionSonda),
+  0x15: Pid('Sonda 2 · tensión', 'V', 2, _tensionSonda),
+  0x16: Pid('Sonda 3 · tensión', 'V', 2, _tensionSonda),
+  0x17: Pid('Sonda 4 · tensión', 'V', 2, _tensionSonda),
+  0x18: Pid('Sonda 5 · tensión', 'V', 2, _tensionSonda),
+  0x19: Pid('Sonda 6 · tensión', 'V', 2, _tensionSonda),
+  0x1A: Pid('Sonda 7 · tensión', 'V', 2, _tensionSonda),
+  0x1B: Pid('Sonda 8 · tensión', 'V', 2, _tensionSonda),
+
+  0x1C: Pid.texto('Norma OBD del coche', 1, _normaObd),
   0x1F: Pid('Tiempo desde el arranque', 's', 2, _dosBytes),
   0x21: Pid('Distancia con el testigo encendido', 'km', 2, _dosBytes),
+  0x22: Pid('Presión del combustible (relativa)', 'kPa', 2, _presionRelativa),
+  0x23: Pid('Presión del raíl', 'kPa', 2, _presionRail),
+  0x2C: Pid('EGR mandada', '%', 1, _carga),
+  0x2D: Pid('Error de EGR', '%', 1, _ajuste),
+  0x2E: Pid('Purga del canister', '%', 1, _carga),
   0x2F: Pid('Nivel de combustible', '%', 1, _carga),
   0x30: Pid('Calentamientos desde el último borrado', '', 1, _crudoA),
   0x31: Pid('Distancia desde el último borrado', 'km', 2, _dosBytes),
+  0x32: Pid('Presión de vapores del depósito', 'Pa', 2, _vapores),
   0x33: Pid('Presión barométrica', 'kPa', 1, _crudoA),
+  0x3C: Pid('Temperatura del catalizador 1', '°C', 2, _tempCatalizador),
+  0x3D: Pid('Temperatura del catalizador 2', '°C', 2, _tempCatalizador),
+  0x3E: Pid('Temperatura del catalizador 3', '°C', 2, _tempCatalizador),
+  0x3F: Pid('Temperatura del catalizador 4', '°C', 2, _tempCatalizador),
   0x42: Pid('Tensión de la centralita', 'V', 2, _milivoltios),
   0x43: Pid('Carga absoluta', '%', 2, _cargaAbsoluta),
+  0x44: Pid('Mezcla mandada (lambda)', '', 2, _lambda),
   0x45: Pid('Acelerador (posición relativa)', '%', 1, _carga),
   0x46: Pid('Temperatura exterior', '°C', 1, _menos40),
+  0x47: Pid('Mariposa B (absoluta)', '%', 1, _carga),
+  0x48: Pid('Mariposa C (absoluta)', '%', 1, _carga),
   0x49: Pid('Pedal del acelerador', '%', 1, _carga),
+  0x4A: Pid('Pedal E', '%', 1, _carga),
+  0x4B: Pid('Pedal F', '%', 1, _carga),
+  0x4C: Pid('Apertura de mariposa mandada', '%', 1, _carga),
   0x4D: Pid('Tiempo con el testigo encendido', 'min', 2, _dosBytes),
   0x4E: Pid('Tiempo desde el último borrado', 'min', 2, _dosBytes),
+  0x51: Pid.texto('Combustible que usa', 1, _tipoCombustible),
+  0x52: Pid('Etanol en el combustible', '%', 1, _carga),
+  0x53: Pid('Presión absoluta de vapores', 'kPa', 2, _vaporesAbsoluta),
   0x5A: Pid('Pedal (posición relativa)', '%', 1, _carga),
+  0x5B: Pid('Carga de la batería híbrida', '%', 1, _carga),
   0x5C: Pid('Temperatura del aceite', '°C', 1, _menos40),
   0x5E: Pid('Consumo instantáneo', 'L/h', 2, _consumo),
   0x5F: Pid('Norma de emisiones', '', 1, _crudoA),
+  0x61: Pid('Par pedido por el conductor', '%', 1, _parMotor),
   0x62: Pid('Par motor real', '%', 1, _parMotor),
   0x63: Pid('Par motor de referencia', 'Nm', 2, _dosBytes),
   0x7F: Pid('Horas de funcionamiento del motor', 'h', 4, _horas),
@@ -92,6 +151,115 @@ double _maf(List<int> b) => (256 * b[0] + b[1]) / 100;
 double _dosBytes(List<int> b) => (256 * b[0] + b[1]).toDouble();
 double _milivoltios(List<int> b) => (256 * b[0] + b[1]) / 1000;
 double _consumo(List<int> b) => (256 * b[0] + b[1]) / 20;
+double _tensionSonda(List<int> b) => b[0] / 200;
+double _presionRelativa(List<int> b) => (256 * b[0] + b[1]) * 0.079;
+double _presionRail(List<int> b) => (256 * b[0] + b[1]) * 10;
+double _tempCatalizador(List<int> b) => ((256 * b[0] + b[1]) / 10) - 40;
+double _lambda(List<int> b) => (256 * b[0] + b[1]) * 2 / 65536;
+double _vaporesAbsoluta(List<int> b) => (256 * b[0] + b[1]) / 200;
+
+/// Con SIGNO y en complemento a dos: la presión de vapores puede ser negativa
+/// (depósito en depresión) y leerla sin signo da saltos de 65.000 Pa que
+/// parecen una avería gravísima y no son nada.
+double _vapores(List<int> b) {
+  final crudo = 256 * b[0] + b[1];
+  return (crudo > 32767 ? crudo - 65536 : crudo).toDouble();
+}
+
+/// PID 01: los dos primeros bits del byte A son el testigo del motor y
+/// cuántos códigos hay guardados. Lo demás del byte son los monitores de a
+/// bordo, que solo le dicen algo a un taller.
+String _testigo(List<int> b) {
+  final encendido = (b[0] & 0x80) != 0;
+  final cuantos = b[0] & 0x7F;
+  if (!encendido && cuantos == 0) return 'Apagado · sin códigos guardados';
+  final codigos = cuantos == 1 ? '1 código guardado' : '$cuantos códigos guardados';
+  return encendido ? 'ENCENDIDO · $codigos' : 'Apagado · $codigos';
+}
+
+const List<String> _modosCombustible = [
+  'Sin datos',
+  'En bucle abierto: motor todavía frío',
+  'En bucle cerrado: usando la sonda lambda',
+  'En bucle abierto: por carga o deceleración',
+  'En bucle abierto: por fallo del sistema',
+  'En bucle cerrado con algún fallo de sonda',
+];
+
+String _sistemaCombustible(List<int> b) {
+  final valor = b[0];
+  if (valor == 0) return 'Sin datos';
+  // Es un mapa de bits: solo hay uno activo, y su posición es el modo
+  for (var i = 0; i < 8; i++) {
+    if ((valor & (1 << i)) != 0) {
+      return i + 1 < _modosCombustible.length
+          ? _modosCombustible[i + 1]
+          : 'Modo $i';
+    }
+  }
+  return 'Sin datos';
+}
+
+String _aireSecundario(List<int> b) {
+  if ((b[0] & 0x01) != 0) return 'Al escape antes del catalizador';
+  if ((b[0] & 0x02) != 0) return 'Aguas abajo del catalizador';
+  if ((b[0] & 0x04) != 0) return 'A la atmósfera o desconectado';
+  if ((b[0] & 0x08) != 0) return 'Bombeando para diagnóstico';
+  return 'Sin datos';
+}
+
+String _sondas(List<int> b) {
+  final presentes = <String>[];
+  for (var i = 0; i < 8; i++) {
+    if ((b[0] & (1 << i)) != 0) {
+      presentes.add('banco ${i < 4 ? 1 : 2} · sonda ${(i % 4) + 1}');
+    }
+  }
+  return presentes.isEmpty ? 'Ninguna declarada' : presentes.join(', ');
+}
+
+const Map<int, String> _normasObd = {
+  1: 'OBD-II (California, ARB)',
+  2: 'OBD (federal, EPA)',
+  3: 'OBD y OBD-II',
+  4: 'OBD-I',
+  5: 'Sin OBD de a bordo',
+  6: 'EOBD (Europa)',
+  7: 'EOBD y OBD-II',
+  8: 'EOBD y OBD',
+  9: 'EOBD, OBD y OBD-II',
+  10: 'JOBD (Japón)',
+  11: 'JOBD y OBD-II',
+  12: 'JOBD y EOBD',
+  13: 'JOBD, EOBD y OBD-II',
+};
+
+String _normaObd(List<int> b) => _normasObd[b[0]] ?? 'Norma ${b[0]}';
+
+const Map<int, String> _tiposCombustible = {
+  1: 'Gasolina',
+  2: 'Metanol',
+  3: 'Etanol',
+  4: 'Gasóleo',
+  5: 'GLP',
+  6: 'Gas natural comprimido',
+  7: 'Propano',
+  8: 'Eléctrico',
+  9: 'Bifuel con gasolina',
+  10: 'Bifuel con metanol',
+  11: 'Bifuel con etanol',
+  12: 'Bifuel con GLP',
+  13: 'Bifuel con gas natural',
+  14: 'Bifuel con propano',
+  15: 'Bifuel eléctrico',
+  17: 'Híbrido de gasolina',
+  18: 'Híbrido de gasóleo',
+  19: 'Híbrido eléctrico',
+  23: 'Híbrido enchufable',
+};
+
+String _tipoCombustible(List<int> b) =>
+    _tiposCombustible[b[0]] ?? 'Tipo ${b[0]}';
 
 /// El orden en que se ENSEÑAN los datos, de más a menos interesante para una
 /// persona. No es la lista de lo que se pide: eso lo decide el coche.
@@ -101,19 +269,24 @@ double _consumo(List<int> b) => (256 * b[0] + b[1]) / 20;
 /// otros que nadie le preguntó. Preguntar primero qué soporta y leer todo eso
 /// da más datos y además evita esperar por respuestas que no van a llegar.
 const List<int> ordenDeInteres = [
-  0xA6, 0x42, 0x05, 0x2F, 0x0C, 0x0D, 0x5C, 0x46, 0x11, 0x45, 0x5A,
-  0x04, 0x43, 0x10, 0x0B, 0x33, 0x0F, 0x1F, 0x7F, 0x21, 0x31, 0x4D, 0x4E,
+  0x01, 0xA6, 0x42, 0x05, 0x2F, 0x0C, 0x0D, 0x5C, 0x46, 0x11, 0x45, 0x5A,
+  0x04, 0x43, 0x10, 0x0B, 0x33, 0x0F, 0x03, 0x1C, 0x51, 0x1F, 0x7F,
+  0x21, 0x31, 0x4D, 0x4E, 0x13, 0x14, 0x15,
 ];
 
-/// Ordena lo leído por interés; lo que no esté en la lista va detrás, por PID.
+/// Ordena lo leído por interés. Detrás de los de la lista van los demás que la
+/// app SÍ entiende, y al final del todo los que solo sabe repetir en
+/// hexadecimal: son datos de verdad y tienen que verse, pero no compitiendo
+/// por el sitio con la temperatura del refrigerante.
 List<Lectura> porInteres(List<Lectura> lecturas) {
-  int rango(int pid) {
-    final i = ordenDeInteres.indexOf(pid);
-    return i < 0 ? 1000 + pid : i;
+  int rango(Lectura l) {
+    if (!l.reconocido) return 10000 + l.pid;
+    final i = ordenDeInteres.indexOf(l.pid);
+    return i < 0 ? 1000 + l.pid : i;
   }
 
   final copia = [...lecturas];
-  copia.sort((a, b) => rango(a.pid).compareTo(rango(b.pid)));
+  copia.sort((a, b) => rango(a).compareTo(rango(b)));
   return copia;
 }
 
@@ -121,8 +294,35 @@ class Lectura {
   final int pid;
   final String nombre;
   final String unidad;
-  final double valor;
-  const Lectura(this.pid, this.nombre, this.unidad, this.valor);
+
+  /// Null cuando el dato no es un número (un enumerado, un mapa de bits, o un
+  /// PID que esta app todavía no sabe interpretar).
+  final double? valor;
+
+  /// Lo que se enseña cuando no hay número. Para un PID desconocido son sus
+  /// bytes en hexadecimal, que no es bonito pero es LA VERDAD y se puede
+  /// buscar; callárselo sería peor.
+  final String? texto;
+
+  /// Los bytes tal cual llegaron. Se guardan siempre: es lo que permite
+  /// enseñar el volcado sin tener que repetir la conversación con el coche.
+  final List<int> crudo;
+
+  const Lectura(
+    this.pid,
+    this.nombre,
+    this.unidad,
+    this.valor, {
+    this.texto,
+    this.crudo = const [],
+  });
+
+  bool get esNumero => valor != null;
+
+  /// Si la app sabe lo que significa o solo sabe repetirlo. Se usa para
+  /// agrupar al final los que no entiende, en vez de mezclarlos con los demás
+  /// y que parezca que el coche contesta cosas raras.
+  bool get reconocido => pids.containsKey(pid);
 }
 
 class Averia {
@@ -290,14 +490,14 @@ class Sesion {
     return true;
   }
 
-  /// Una lectura del modo 01. Devuelve null si el coche no da ese dato.
-  Future<Lectura?> leerPid(int pid) async {
-    final def = pids[pid];
-    if (def == null) return null;
+  /// Los bytes de datos de un PID, sin interpretar. Devuelve null si el coche
+  /// no contesta a eso.
+  Future<List<int>?> leerPidCrudo(int pid, {int? cuantos}) async {
     final r = await mandar('01${_hex2(pid)}');
     if (esError(r)) return null;
 
     final bytes = aBytes(r);
+
     /// La respuesta empieza por 41 y repite el PID pedido. Se busca esa pareja
     /// en vez de dar por hecho que va la primera: algunos coches cuelan bytes
     /// antes, y un byte de desplazamiento cambia el valor entero.
@@ -307,9 +507,34 @@ class Sesion {
     }
     if (i < 0) return null;
 
-    if (i + 2 + def.bytes > bytes.length) return null;
-    final datos = bytes.sublist(i + 2, i + 2 + def.bytes);
-    return Lectura(pid, def.nombre, def.unidad, def.calcular(datos));
+    final datos = bytes.sublist(i + 2);
+    if (cuantos == null) return datos.isEmpty ? null : datos;
+    if (datos.length < cuantos) return null;
+    return datos.sublist(0, cuantos);
+  }
+
+  /// Una lectura del modo 01. Devuelve null si el coche no da ese dato.
+  ///
+  /// UN PID QUE ESTA APP NO CONOCE NO SE TIRA A LA BASURA. Si el coche lo
+  /// anuncia y lo contesta, sale con su número de PID y sus bytes en
+  /// hexadecimal. Antes se descartaba en silencio, y el resultado era una
+  /// pantalla con menos datos de los que el coche había dado sin explicar por
+  /// qué faltaban: la app parecía rota cuando el que no llegaba era yo.
+  Future<Lectura?> leerPid(int pid) async {
+    final def = pids[pid];
+    final datos = await leerPidCrudo(pid, cuantos: def?.bytes);
+    if (datos == null) return null;
+
+    if (def == null) {
+      return Lectura(pid, 'PID 0x${_hex2(pid)}', '', null,
+          texto: datos.map(_hex2).join(' '), crudo: datos);
+    }
+    if (def.describir != null) {
+      return Lectura(pid, def.nombre, '', null,
+          texto: def.describir!(datos), crudo: datos);
+    }
+    return Lectura(pid, def.nombre, def.unidad, def.calcular!(datos),
+        crudo: datos);
   }
 
   /// Lee lo que el coche DE VERDAD ofrece.
@@ -325,8 +550,13 @@ class Sesion {
     void Function(int hechos, int total)? avisar,
   }) async {
     final soportados = await pidsSoportados();
-    // Solo los que sabemos convertir en un número con su unidad
-    var utiles = soportados.where(pids.containsKey).toList();
+
+    /// SE PIDE TODO LO QUE EL COCHE ANUNCIA, no solo lo que la app sabe
+    /// traducir. Los que no conoce salen con su número de PID y su
+    /// hexadecimal, y así el usuario ve lo mismo que ve el protocolo. Antes se
+    /// filtraba aquí y la pantalla enseñaba doce datos de los dieciocho que el
+    /// coche había dicho tener, sin decir en ningún sitio que faltaban seis.
+    var utiles = [...soportados];
 
     /// SI LA ENUMERACIÓN NO DA NADA, SE PRUEBA IGUAL. El primer comando de una
     /// sesión llega sucio (el ELM327 escupe SEARCHING y puntos mientras busca

@@ -85,10 +85,10 @@ void main() {
       final s = Sesion(TransporteSimulado(retardo: Duration.zero));
       await s.iniciar();
       final lista = await s.pidsSoportados();
-      // El simulador tiene 15 PID con datos: ni uno más ni uno menos. Si
+      // El simulador tiene 21 PID con datos: ni uno más ni uno menos. Si
       // saliera de una lista escrita a mano esto pasaría igual y en el coche
       // no, que es justo lo que esta prueba impide.
-      expect(lista.length, 15);
+      expect(lista.length, 21);
       expect(lista, contains(0x0C));
       expect(lista, contains(0x5E));
       expect(lista, isNot(contains(0x20))); // 0x20 es el bit de "hay más", no un dato
@@ -226,6 +226,100 @@ void main() {
       await s.iniciar();
       expect(visto, contains('envia:ATZ'));
       expect(visto.where((v) => v.startsWith('recibe:')), isNotEmpty);
+    });
+  });
+
+  /// LO QUE EL COCHE DA Y LA APP NO ENTENDÍA. Este grupo existe porque la
+  /// pantalla enseñaba menos datos de los que el coche había contestado y no
+  /// decía en ningún sitio que faltaran: se filtraban en silencio los PID sin
+  /// fórmula conocida, y la cuenta no cuadraba con lo que el propio coche
+  /// declara soportar.
+  group('ningún dato del coche se tira en silencio', () {
+    test('un PID que la app no conoce sale con sus bytes', () async {
+      // 0x02 lo anuncia cualquier coche y esta app no lo interpreta.
+      final s = Sesion(_Grabado(const {
+        '0100': '4100E0000000', // solo 01, 02 y 03
+        '0102': '410201AB',
+      }));
+      await s.iniciar();
+      final l = await s.leerPid(0x02);
+      expect(l, isNotNull, reason: 'el coche lo ha contestado: no se tira');
+      expect(l!.esNumero, isFalse);
+      expect(l.texto, '01 AB');
+      expect(l.reconocido, isFalse);
+      expect(l.crudo, [0x01, 0xAB]);
+    });
+
+    test('los que no se entienden van los últimos, no mezclados', () {
+      final orden = porInteres([
+        const Lectura(0x02, 'PID 0x02', '', null, texto: '01 AB'),
+        const Lectura(0x05, 'Temperatura del refrigerante', '°C', 35),
+      ]);
+      expect(orden.first.pid, 0x05);
+      expect(orden.last.pid, 0x02);
+    });
+
+    test('un PID que el coche no contesta sigue siendo null', () async {
+      final s = Sesion(_Grabado(const {'0100': '4100E0000000'}));
+      await s.iniciar();
+      expect(await s.leerPid(0x02), isNull);
+    });
+  });
+
+  group('los datos que no son números', () {
+    test('el testigo del motor y cuántos códigos hay', () async {
+      // 0x83 = testigo encendido (bit alto) y 3 códigos guardados
+      final s = Sesion(_Grabado(const {'0101': '410183070000'}));
+      await s.iniciar();
+      final l = await s.leerPid(0x01);
+      expect(l!.texto, contains('ENCENDIDO'));
+      expect(l.texto, contains('3 códigos'));
+      expect(l.esNumero, isFalse);
+    });
+
+    test('con el testigo apagado y sin códigos lo dice claro', () async {
+      final s = Sesion(_Grabado(const {'0101': '410100070000'}));
+      await s.iniciar();
+      final l = await s.leerPid(0x01);
+      expect(l!.texto, 'Apagado · sin códigos guardados');
+    });
+
+    test('un código en singular no dice "1 códigos"', () async {
+      final s = Sesion(_Grabado(const {'0101': '410181070000'}));
+      await s.iniciar();
+      expect((await s.leerPid(0x01))!.texto, contains('1 código guardado'));
+    });
+
+    test('la norma OBD sale con su nombre, no con un número', () async {
+      final s = Sesion(_Grabado(const {'011C': '411C06'}));
+      await s.iniciar();
+      expect((await s.leerPid(0x1C))!.texto, contains('EOBD'));
+    });
+
+    test('el sistema de combustible dice en qué bucle está', () async {
+      final s = Sesion(_Grabado(const {'0103': '41030200'}));
+      await s.iniciar();
+      expect((await s.leerPid(0x03))!.texto, contains('bucle cerrado'));
+    });
+  });
+
+  group('las sondas lambda', () {
+    test('la tensión sale en voltios y con decimales que se vean', () async {
+      // 0x8C = 140; 140/200 = 0,70 V
+      final s = Sesion(_Grabado(const {'0114': '41148C80'}));
+      await s.iniciar();
+      final l = await s.leerPid(0x14);
+      expect(l!.valor, closeTo(0.70, 0.001));
+      expect(l.unidad, 'V');
+    });
+
+    test('la presión de vapores puede ser NEGATIVA', () async {
+      /// Va en complemento a dos. Leerla sin signo daba saltos de 65.000 Pa
+      /// que parecen una avería gravísima y son un depósito en depresión,
+      /// que es lo normal.
+      final s = Sesion(_Grabado(const {'0132': '4132FF38'}));
+      await s.iniciar();
+      expect((await s.leerPid(0x32))!.valor, -200);
     });
   });
 
