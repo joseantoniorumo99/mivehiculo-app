@@ -13,6 +13,7 @@ library;
 import 'package:flutter/material.dart';
 
 import 'obd/enlace_classic.dart';
+import 'obd/lector_recordado.dart';
 import 'obd/protocolo.dart';
 import 'obd/transporte_bluetooth.dart';
 
@@ -38,6 +39,8 @@ class _PantallaObdState extends State<PantallaObd> {
   /// preguntar y la única salida son los ajustes de la app. Sin este botón el
   /// usuario se queda con un mensaje y ninguna forma de arreglarlo.
   bool _ofrecerAjustes = false;
+  /// El último lector que funcionó, para poder repetir sin volver a elegir.
+  AparatoBluetooth? _lector;
   final List<String> _registro = [];
 
   void _apuntar(String linea) {
@@ -113,8 +116,13 @@ class _PantallaObdState extends State<PantallaObd> {
         throw 'El adaptador no responde a los comandos.';
       }
 
-      _apuntar('Leyendo datos del motor…');
-      final lecturas = await sesion.leerTodo();
+      /// Se le PREGUNTA al coche qué sabe dar antes de pedir nada. Con una
+      /// lista fija, un Opel real contestaba "no soportado" a cinco de diez
+      /// mientras tenía otros datos que nadie le preguntaba.
+      _apuntar('Preguntando al coche qué datos da…');
+      final lecturas = await sesion.leerLoQueHaya(
+        avisar: (hechos, total) => _apuntar('Leyendo $hechos de $total…'),
+      );
 
       _apuntar('Buscando códigos de avería…');
       final guardados = await sesion.leerCodigos(3);
@@ -146,7 +154,29 @@ class _PantallaObdState extends State<PantallaObd> {
     }
   }
 
-  Future<void> _conectarA(AparatoBluetooth a) async {
+  /// Al abrir la pantalla: si ya se sabe con qué lector se habló, se lee SOLA.
+  ///
+  /// Y se lee UNA VEZ, cerrando el enlace al terminar. Dejar el Bluetooth
+  /// escuchando en segundo plano gasta batería, deja el puerto cogido para
+  /// cualquier otra app y el sistema acaba matando el proceso igualmente. Lo
+  /// que se quiere es que el dato esté fresco cuando MIRAS, no que se lea
+  /// cuando no miras.
+  @override
+  void initState() {
+    super.initState();
+    _intentarSolo();
+  }
+
+  Future<void> _intentarSolo() async {
+    final guardado = await LectorRecordado.leer();
+    if (guardado == null || !mounted) return;
+    await _conectarA(
+      AparatoBluetooth(guardado.nombre, guardado.direccion),
+      silencioSiFalla: true,
+    );
+  }
+
+  Future<void> _conectarA(AparatoBluetooth a, {bool silencioSiFalla = false}) async {
     setState(() {
       _fase = _Fase.leyendo;
       _paso = 'Conectando con ${a.nombre}…';
@@ -165,9 +195,20 @@ class _PantallaObdState extends State<PantallaObd> {
         });
         return;
       }
+      // Funcionó: se recuerda para poder leer solo la próxima vez
+      await LectorRecordado.guardar(a.direccion, a.nombre);
+      _lector = a;
       await _leer(transporte, ejemplo: false);
     } catch (e) {
       if (!mounted) return;
+      /* El intento automático de al abrir NO puede gritar un error: casi
+         siempre es que el coche está apagado o el lector fuera, y eso no es
+         un fallo, es lo normal cuando abres la app en el sofá. Se vuelve al
+         inicio sin más y ya pulsará él si quiere. */
+      if (silencioSiFalla) {
+        setState(() => _fase = _Fase.inicio);
+        return;
+      }
       setState(() {
         _fase = _Fase.inicio;
         _error = 'No hemos podido conectar con ${a.nombre}: $e';
@@ -206,9 +247,23 @@ class _PantallaObdState extends State<PantallaObd> {
           ),
           const SizedBox(height: 20),
           FilledButton(
-            onPressed: _elegirLector,
-            child: const Text('Conectar con mi lector'),
+            /// Si ya se sabe cuál es, no se vuelve a preguntar: se conecta. La
+            /// lista solo sale la primera vez o si se pide cambiar de lector.
+            onPressed: () =>
+                _lector != null ? _conectarA(_lector!) : _elegirLector(),
+            child: Text(_lector != null
+                ? 'Leer con ${_lector!.nombre}'
+                : 'Conectar con mi lector'),
           ),
+          if (_lector != null)
+            TextButton(
+              onPressed: () async {
+                await LectorRecordado.olvidar();
+                if (mounted) setState(() => _lector = null);
+                await _elegirLector();
+              },
+              child: const Text('Usar otro lector'),
+            ),
           const SizedBox(height: 10),
           TextButton(
             onPressed: () =>
@@ -313,6 +368,13 @@ class _PantallaObdState extends State<PantallaObd> {
             ..._lecturas.map((l) => ListTile(
                   dense: true,
                   title: Text(l.nombre),
+                  /// La mariposa NUNCA marca cero: tiene un tope mecánico y en
+                  /// ralentí se queda entre el 10 y el 20 %. Sin decirlo aquí,
+                  /// cualquiera piensa que el pedal está pisado — pasó.
+                  subtitle: l.pid == 0x11
+                      ? const Text('En ralentí marca 10-20 % por diseño, no es el pedal',
+                          style: TextStyle(fontSize: 11))
+                      : null,
                   trailing: Text(
                     '${l.valor.toStringAsFixed(_decimales(l.unidad))} ${l.unidad}',
                     style: const TextStyle(
@@ -343,6 +405,11 @@ class _PantallaObdState extends State<PantallaObd> {
                 ? 'No se puede guardar un ejemplo'
                 : 'Guardar en el diario'),
           ),
+          if (!_esEjemplo && _lector != null)
+            TextButton(
+              onPressed: () => _conectarA(_lector!),
+              child: const Text('Volver a leer'),
+            ),
           TextButton(
             onPressed: () => setState(() => _fase = _Fase.inicio),
             child: const Text('Volver'),

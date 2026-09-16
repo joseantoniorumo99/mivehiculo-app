@@ -99,6 +99,38 @@ void main() {
       await s.iniciar();
       expect(await s.leerVin(), 'VF1RFA00567123456');
     });
+  });
+
+  group('el bastidor de un coche de verdad', () {
+    /// Respuesta LITERAL de un Opel Astra, copiada del registro de la app en
+    /// el coche. Llega en cinco tramas y cada una trae su cabecera `4902NN`.
+    const respuestaReal = '49020100000057 490202304C3054 49020347463438 '
+        '49020433363133 49020537323536';
+
+    test('parte por tramas y no se cuela ninguna cabecera', () {
+      expect(vinDeRespuesta(aBytes(respuestaReal)), 'W0L0TGF4836137256');
+    });
+
+    test('la W del principio NO se pierde', () {
+      // Iba en la primera trama, detrás de tres bytes de relleno a cero. La
+      // primera versión se comía las tres primeras letras enteras.
+      expect(vinDeRespuesta(aBytes(respuestaReal))!.startsWith('W0L'), isTrue);
+    });
+
+    test('no aparecen íes de contrabando', () {
+      /// 0x49 es la letra I en ASCII y es el primer byte de CADA cabecera de
+      /// trama. Filtrar "solo letras y dígitos" sobre el flujo entero las
+      /// dejaba pasar: salía 0TIGF48I3613I7256, que no es el bastidor de
+      /// ningún coche. Esta prueba existe por eso exactamente.
+      final vin = vinDeRespuesta(aBytes(respuestaReal))!;
+      expect(vin, isNot(contains('I')));
+      expect(vin.length, 17);
+    });
+
+    test('sin cabecera 4902 no se inventa un bastidor', () {
+      expect(vinDeRespuesta(aBytes('NO DATA')), isNull);
+      expect(vinDeRespuesta(aBytes('41 0C 1A F8')), isNull);
+    });
 
     test('el observador ve CADA comando y CADA respuesta', () async {
       // Sin esto un volcado no enseñaría los mapas de PID soportados y

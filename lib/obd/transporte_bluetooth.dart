@@ -227,8 +227,20 @@ class TransporteSimulado implements Transporte {
     }
 
     if (c == '0902') {
+      /// EN CINCO TRAMAS, como lo manda un coche de verdad: `49 02 NN` y
+      /// cuatro bytes de datos, con la primera rellenada a ceros por delante.
+      /// Antes devolvía el bastidor de una pieza, y por eso el simulador daba
+      /// verde mientras el coche de verdad devolvía un bastidor corrupto: el
+      /// analizador nunca llegaba a ver una cabecera de trama. Un simulador
+      /// más fácil que la realidad no prueba nada.
       const vin = 'VF1RFA00567123456';
-      return '4902${vin.codeUnits.map(_hex).join()}';
+      final bytes = <int>[0, 0, 0, ...vin.codeUnits]; // 3 de relleno + 17 = 20
+      final tramas = <String>[];
+      for (var t = 0; t < 5; t++) {
+        final trozo = bytes.sublist(t * 4, t * 4 + 4);
+        tramas.add('4902${_hex(t + 1)}${trozo.map(_hex).join()}');
+      }
+      return tramas.join(' ');
     }
     return 'NO DATA';
   }
