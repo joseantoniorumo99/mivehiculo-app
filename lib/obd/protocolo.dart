@@ -142,12 +142,21 @@ String _hex2(int n) => n.toRadixString(16).toUpperCase().padLeft(2, '0');
 
 /// Un ELM327 contesta en hexadecimal, pero CÓMO lo escribe depende de su
 /// configuración: con ATS0 manda "410C1AF8" de una pieza; sin él, "41 0C 1A
-/// F8". Y por el medio cuela texto suyo (SEARCHING..., NO DATA) y numeración
-/// de trama ("0:", "1:"). Se tira todo lo que no sea hexadecimal puro.
+/// F8". Y por el medio cuela texto suyo (SEARCHING..., NO DATA, BUS INIT) y
+/// numeración de trama ("0:", "1:").
+///
+/// LOS PUNTOS SE QUITAN ANTES DE MIRAR SI ES HEXADECIMAL. Mientras busca el
+/// protocolo, el ELM327 escribe un punto por intento y los pega a la
+/// respuesta: `SEARCHING... ..4100FE3FB811`. Exigir hexadecimal puro tiraba
+/// ese trozo ENTERO, y con él la respuesta. Se notó tarde porque el primer
+/// comando de la sesión solía ser uno que el coche no soporta, así que
+/// perderlo daba igual; en cuanto el primero pasó a ser el que pregunta qué
+/// PID soporta, la lectura se quedó en blanco.
 List<int> aBytes(String texto) {
   final trozos = texto.split(RegExp(r'[\s>]+'));
   final hex = StringBuffer();
-  for (final t in trozos) {
+  for (final bruto in trozos) {
+    final t = bruto.replaceAll('.', '');
     if (t.isEmpty || t.contains(':')) continue;
     if (!RegExp(r'^[0-9A-Fa-f]+$').hasMatch(t)) continue;
     hex.write(t);
@@ -317,7 +326,17 @@ class Sesion {
   }) async {
     final soportados = await pidsSoportados();
     // Solo los que sabemos convertir en un número con su unidad
-    final utiles = soportados.where(pids.containsKey).toList();
+    var utiles = soportados.where(pids.containsKey).toList();
+
+    /// SI LA ENUMERACIÓN NO DA NADA, SE PRUEBA IGUAL. El primer comando de una
+    /// sesión llega sucio (el ELM327 escupe SEARCHING y puntos mientras busca
+    /// el protocolo) y si justo ese es el que pregunta qué PID hay, un fallo
+    /// de lectura dejaba la pantalla EN BLANCO teniendo el coche delante. Peor
+    /// que preguntar de más es no preguntar nada.
+    if (utiles.isEmpty) {
+      utiles = ordenDeInteres.where(pids.containsKey).toList();
+    }
+
     final salida = <Lectura>[];
     for (var i = 0; i < utiles.length; i++) {
       avisar?.call(i + 1, utiles.length);

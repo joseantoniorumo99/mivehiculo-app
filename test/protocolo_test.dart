@@ -25,6 +25,19 @@ void main() {
       expect(aBytes('0: 41 0C 1A F8'), [0x41, 0x0C, 0x1A, 0xF8]);
     });
 
+    /// LOS PUNTOS PEGADOS A LA RESPUESTA. Mientras busca el protocolo, el
+    /// ELM327 escribe un punto por intento y a veces se quedan pegados al
+    /// dato. Exigir hexadecimal puro tiraba el trozo ENTERO y con él la
+    /// respuesta, y eso dejó la pantalla en blanco con el coche delante.
+    test('los puntos pegados al dato no se llevan el dato', () {
+      // Literal del registro de un Opel Astra, primer comando de la sesión
+      expect(aBytes('SEARCHING... ..4100FE3FB811'),
+          [0x41, 0x00, 0xFE, 0x3F, 0xB8, 0x11]);
+      expect(aBytes('..410C1AF8'), [0x41, 0x0C, 0x1A, 0xF8]);
+      // Y "SEARCHING..." sin puntos sigue sin ser hexadecimal
+      expect(aBytes('SEARCHING...'), isEmpty);
+    });
+
     test('reconoce las respuestas que no son datos', () {
       expect(esError('NO DATA'), isTrue);
       expect(esError('UNABLE TO CONNECT'), isTrue);
@@ -131,6 +144,78 @@ void main() {
       expect(vinDeRespuesta(aBytes('NO DATA')), isNull);
       expect(vinDeRespuesta(aBytes('41 0C 1A F8')), isNull);
     });
+  });
+
+  /// UN COCHE DE VERDAD, GRABADO. Las respuestas son literales del registro de
+  /// un Opel Astra leído en la calle. Vale más que cualquier caso inventado:
+  /// dos fallos que costaron dos viajes al coche —el bastidor con cabeceras y
+  /// los puntos del SEARCHING— se ven aquí y no en un simulador amable.
+  group('sesión grabada de un Opel Astra', () {
+    const respuestas = <String, String>{
+      'ATZ': 'ATZ ELM327 v1.5',
+      'ATE0': 'ATE0 OK',
+      'ATL0': 'OK',
+      'ATS0': 'OK',
+      'ATH0': 'OK',
+      'ATSP0': 'OK',
+      // El primero de la sesión llega con SEARCHING y puntos pegados
+      '0100': 'SEARCHING... ..4100FE3FB811',
+      '0120': '412000000000',
+      '0105': '41054B',
+      '010C': '410C0000',
+      '010D': '410D00',
+      '0111': '411123',
+      '0104': '410432',
+      '010B': '410B63',
+      '010E': '410E80',
+      '010F': '410F2D',
+      '0110': '4110012C',
+      '03': '43000000000000',
+      '0902': '49020100000057 490202304C3054 49020347463438 '
+          '49020433363133 49020537323536',
+    };
+
+    Sesion sesionGrabada() => Sesion(_Grabado(respuestas));
+
+    test('enumera los PID que el coche anuncia de verdad', () async {
+      final s = sesionGrabada();
+      await s.iniciar();
+      final lista = await s.pidsSoportados();
+      // FE 3F B8 11 -> 01..07, 0B..10, 11, 13, 14, 15, 1C (y 20 = "hay más")
+      expect(lista, contains(0x05));
+      expect(lista, contains(0x0C));
+      expect(lista, contains(0x11));
+      expect(lista, isNot(contains(0x20)));
+      expect(lista, isNot(contains(0x42))); // este coche NO da la tensión
+    });
+
+    test('lee lo que hay y no se queda en blanco', () async {
+      final s = sesionGrabada();
+      await s.iniciar();
+      final l = await s.leerLoQueHaya();
+      expect(l, isNotEmpty, reason: 'con el coche delante no puede dar cero');
+      final refrigerante = l.firstWhere((x) => x.pid == 0x05);
+      expect(refrigerante.valor, 35); // 0x4B = 75, 75-40 = 35 °C
+      final rpm = l.firstWhere((x) => x.pid == 0x0C);
+      expect(rpm.valor, 0); // motor parado
+    });
+
+    test('la mariposa se llama mariposa, no acelerador', () async {
+      // 0x23 = 35 -> 13,7 %. Con el pie FUERA. El dato es correcto: este
+      // sensor tiene tope mecánico y en ralentí no baja de ~10 %.
+      final s = sesionGrabada();
+      await s.iniciar();
+      final l = await s.leerLoQueHaya();
+      final m = l.firstWhere((x) => x.pid == 0x11);
+      expect(m.valor, closeTo(13.7, 0.1));
+      expect(m.nombre.toLowerCase(), contains('mariposa'));
+    });
+
+    test('y el bastidor sale entero y correcto', () async {
+      final s = sesionGrabada();
+      await s.iniciar();
+      expect(await s.leerVin(), 'W0L0TGF4836137256');
+    });
 
     test('el observador ve CADA comando y CADA respuesta', () async {
       // Sin esto un volcado no enseñaría los mapas de PID soportados y
@@ -157,4 +242,21 @@ void main() {
       }
     });
   });
+}
+
+/// Un transporte que devuelve respuestas GRABADAS de un coche real. Lo que no
+/// esté en la tabla contesta "NO DATA", igual que un coche con un PID que no
+/// soporta — así el simulador no puede ser más amable que la realidad.
+class _Grabado implements Transporte {
+  final Map<String, String> respuestas;
+  _Grabado(this.respuestas);
+
+  @override
+  Future<String> enviar(String comando) async {
+    final c = comando.toUpperCase().replaceAll(RegExp(r'\s'), '');
+    return '${respuestas[c] ?? "NO DATA"}\r\r>';
+  }
+
+  @override
+  Future<void> cerrar() async {}
 }
