@@ -36,15 +36,70 @@ class EnlaceClassic implements EnlaceSerie {
   }
 }
 
+/// Por qué no se pudo, dicho de forma que la pantalla sepa qué ofrecer.
+enum FalloBluetooth { sinPermiso, permisoDenegadoParaSiempre, apagado, otro }
+
+class ErrorBluetooth implements Exception {
+  final FalloBluetooth causa;
+  final String mensaje;
+  const ErrorBluetooth(this.causa, this.mensaje);
+  @override
+  String toString() => mensaje;
+}
+
 /// Lo que la pantalla necesita saber de Bluetooth, y nada más.
 class Bluetooth {
   final _btc = FlutterClassicBluetooth();
+
+  /// En Android 12+ `BLUETOOTH_CONNECT` es un permiso de TIEMPO DE EJECUCIÓN:
+  /// declararlo en el manifiesto no basta, hay que pedírselo al usuario o la
+  /// llamada revienta con un SecurityException. Se pide aquí, antes de listar
+  /// nada, y no se deja que salte solo dentro de otra operación: un diálogo de
+  /// permisos que aparece de la nada, sin que se entienda para qué, se deniega.
+  Future<void> _asegurarPermisos() async {
+    final estado = await _btc.requestPermissions();
+    if (estado == BtcPermissionStatus.granted ||
+        estado == BtcPermissionStatus.notRequired) {
+      return;
+    }
+    if (estado == BtcPermissionStatus.permanentlyDenied) {
+      throw const ErrorBluetooth(
+        FalloBluetooth.permisoDenegadoParaSiempre,
+        'Le has dicho al sistema que no vuelva a preguntar por el permiso de '
+        'Bluetooth. Hay que dárselo a mano en los ajustes de la app.',
+      );
+    }
+    throw const ErrorBluetooth(
+      FalloBluetooth.sinPermiso,
+      'Sin permiso de Bluetooth no se puede ver el lector.',
+    );
+  }
+
+  /// El sistema tampoco puede encender el Bluetooth por su cuenta. Se
+  /// comprueba antes para no acabar en "no hay ningún aparato emparejado",
+  /// que es el mensaje equivocado y manda a buscar el problema donde no está.
+  Future<void> _asegurarEncendido() async {
+    if (!await _btc.isSupported()) {
+      throw const ErrorBluetooth(
+          FalloBluetooth.otro, 'Este móvil no tiene Bluetooth clásico.');
+    }
+    if (!await _btc.isEnabled()) {
+      throw const ErrorBluetooth(FalloBluetooth.apagado,
+          'El Bluetooth está apagado. Enciéndelo y vuelve a intentarlo.');
+    }
+  }
+
+  /// Manda al usuario a los ajustes de la app: es la única salida cuando el
+  /// permiso quedó denegado para siempre.
+  Future<void> abrirAjustes() => _btc.openAppSettings();
 
   /// Los EMPAREJADOS, no los que se ven al buscar. Un ELM327 hay que
   /// emparejarlo antes desde los ajustes del móvil (PIN 1234 o 0000), y ahí
   /// aparece como "emparejado pero no conectado", que es lo normal: el enlace
   /// solo se abre cuando una app lo pide, y eso es justo lo que hace esto.
   Future<List<AparatoBluetooth>> emparejados() async {
+    await _asegurarPermisos();
+    await _asegurarEncendido();
     final lista = await _btc.getPairedDevices();
     // displayName no es nulo en este paquete, pero sí puede venir VACÍO: en
     // ese caso vale más la dirección MAC que una fila en blanco en la lista.

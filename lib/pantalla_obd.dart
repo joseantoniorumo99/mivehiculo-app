@@ -34,6 +34,10 @@ class _PantallaObdState extends State<PantallaObd> {
   List<Averia> _averias = [];
   String? _vin;
   bool _esEjemplo = false;
+  /// Cuando el permiso queda denegado PARA SIEMPRE, el sistema ya no vuelve a
+  /// preguntar y la única salida son los ajustes de la app. Sin este botón el
+  /// usuario se queda con un mensaje y ninguna forma de arreglarlo.
+  bool _ofrecerAjustes = false;
   final List<String> _registro = [];
 
   void _apuntar(String linea) {
@@ -45,6 +49,7 @@ class _PantallaObdState extends State<PantallaObd> {
     setState(() {
       _fase = _Fase.eligiendo;
       _error = null;
+      _ofrecerAjustes = false;
       _aparatos = [];
     });
     try {
@@ -60,6 +65,15 @@ class _PantallaObdState extends State<PantallaObd> {
               'conector, así que sin contacto ni se enciende.';
         });
       }
+    } on ErrorBluetooth catch (e) {
+      // Cada causa tiene una salida distinta, y decirlas mal manda al usuario
+      // a buscar el problema donde no está.
+      if (!mounted) return;
+      setState(() {
+        _fase = _Fase.inicio;
+        _error = e.mensaje;
+        _ofrecerAjustes = e.causa == FalloBluetooth.permisoDenegadoParaSiempre;
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -211,7 +225,22 @@ class _PantallaObdState extends State<PantallaObd> {
                 border: Border.all(color: const Color(0x57FCA311)),
                 borderRadius: BorderRadius.circular(16),
               ),
-              child: Text(_error!),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(_error!),
+                  /// Un mensaje sin salida no sirve de nada: cuando el permiso
+                  /// quedó denegado para siempre, el sistema ya no pregunta y
+                  /// la única forma de arreglarlo son los ajustes de la app.
+                  if (_ofrecerAjustes) ...[
+                    const SizedBox(height: 8),
+                    TextButton(
+                      onPressed: _bt.abrirAjustes,
+                      child: const Text('Abrir los ajustes de la app'),
+                    ),
+                  ],
+                ],
+              ),
             ),
           ],
         ],
