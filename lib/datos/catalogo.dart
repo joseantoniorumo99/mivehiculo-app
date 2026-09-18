@@ -1,4 +1,4 @@
-/// EL CATÁLOGO DE COCHES: 52 marcas, 955 modelos y 3.905 motorizaciones.
+/// EL CATÁLOGO DE COCHES: 51 marcas, 763 modelos y 5.522 motorizaciones.
 ///
 /// GENERADO, no escrito a mano. Sale de las matriculaciones REALES en España
 /// que publica la Agencia Europea de Medio Ambiente en su base de vigilancia

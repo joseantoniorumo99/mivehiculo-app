@@ -67,6 +67,73 @@ const Map<String, String> servicioParaTipo = {
   'revision': 'Mecánica general',
 };
 
+/// La etiqueta con la que el servidor conoce a un taller: su id de
+/// OpenStreetMap sin nada que no sea letra o número ("osm-node-11" →
+/// "osmnode11"). Es la MISMA función que usa la Function de citas y la web;
+/// si se separan, el móvil deja de encontrar la ficha del taller.
+String etiquetaDeTaller(String lugarId) {
+  final e = lugarId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+  return e.length > 36 ? e.substring(0, 36) : e;
+}
+
+/// Un servicio tal y como lo publicó el taller: nombre, precio de partida
+/// (o nada) y tiempo aproximado (o nada).
+class ServicioPublicado {
+  final String nombre;
+  final double? precio;
+  final String tiempo;
+  const ServicioPublicado(this.nombre, this.precio, this.tiempo);
+}
+
+/// La ficha que el taller publicó desde su panel. Es lo que manda sobre lo
+/// que diga OpenStreetMap: lo escribió él.
+class FichaTaller {
+  final String nombre;
+  final String telefono;
+  final String direccion;
+  final List<ServicioPublicado> servicios;
+  final List<String> extras;
+  final String actualizado; // ISO-8601 o vacío
+  const FichaTaller({
+    this.nombre = '',
+    this.telefono = '',
+    this.direccion = '',
+    this.servicios = const [],
+    this.extras = const [],
+    this.actualizado = '',
+  });
+
+  static FichaTaller deFila(Map<String, dynamic> d) {
+    List<dynamic> lista(Object? v) {
+      if (v is List) return v;
+      if (v is String && v.trim().startsWith('[')) {
+        try {
+          final x = jsonDecode(v);
+          if (x is List) return x;
+        } catch (_) {}
+      }
+      return const [];
+    }
+
+    return FichaTaller(
+      nombre: (d['nombre'] ?? '').toString(),
+      telefono: (d['telefono'] ?? '').toString(),
+      direccion: (d['direccion'] ?? '').toString(),
+      servicios: lista(d['servicios'])
+          .whereType<Map>()
+          .map((s) => ServicioPublicado(
+                (s['nombre'] ?? '').toString(),
+                s['precio'] == null ? null : double.tryParse(s['precio'].toString()),
+                (s['tiempo'] ?? '').toString(),
+              ))
+          .where((s) => s.nombre.isNotEmpty)
+          .toList(),
+      extras: lista(d['extras']).map((e) => e.toString()).where((e) => e.isNotEmpty).toList(),
+      actualizado: (d['actualizado'] ?? '').toString(),
+    );
+  }
+}
+
 class Lugar {
   final String id;
   final TipoLugar tipo;
@@ -100,6 +167,25 @@ class Lugar {
     this.servicios = const [],
     this.esItv = false,
   });
+
+  bool get esTaller => tipo == TipoLugar.taller;
+
+  /// El mismo sitio con otros servicios: los que publicó el taller mandan
+  /// sobre los de OpenStreetMap al pedir cita.
+  Lugar conServicios(List<String> nuevos) => Lugar(
+        id: id,
+        tipo: tipo,
+        nombre: nombre,
+        lat: lat,
+        lon: lon,
+        direccion: direccion,
+        telefono: telefono,
+        web: web,
+        horario: horario,
+        horarioTexto: horarioTexto,
+        servicios: nuevos,
+        esItv: esItv,
+      );
 
   bool hace(String servicio) =>
       servicios.any((s) => s.toLowerCase() == servicio.toLowerCase());

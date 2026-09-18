@@ -113,6 +113,40 @@ class PantallaVerIntervencion extends StatelessWidget {
                       tono: TonoEstado.neutro,
                     ),
                 ],
+                if (d.fotos.isNotEmpty) ...[
+                  const TituloSeccion('Fotos'),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: d.fotos.map((nombre) {
+                      final f = almacen.ficheroFactura(nombre);
+                      if (f == null) {
+                        return Container(
+                          width: 104,
+                          height: 78,
+                          decoration: BoxDecoration(color: Tono.suelo, borderRadius: BorderRadius.circular(12)),
+                          child: const Icon(Icons.image_not_supported_outlined, color: Tono.tintaSuave),
+                        );
+                      }
+                      return GestureDetector(
+                        onTap: () => showDialog(
+                          context: context,
+                          builder: (_) => Dialog(
+                            insetPadding: const EdgeInsets.all(12),
+                            child: InteractiveViewer(child: Image.file(f)),
+                          ),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image.file(f, width: 104, height: 78, fit: BoxFit.cover),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text('Las piezas, tal y como las fotografió el taller o tú.',
+                      style: TextStyle(fontSize: 12, color: Tono.tintaSuave)),
+                ],
                 if (d.nota.isNotEmpty) ...[
                   const TituloSeccion('Notas'),
                   Tarjeta(child: Text(d.nota, style: const TextStyle(height: 1.45))),

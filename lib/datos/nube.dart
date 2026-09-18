@@ -33,7 +33,9 @@ import 'dart:io';
 import 'package:appwrite/appwrite.dart';
 import 'package:appwrite/models.dart' as modelos;
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 
+import '../lugares/lugares.dart' show FichaTaller, etiquetaDeTaller;
 import 'almacen.dart';
 import 'modelo.dart';
 
@@ -58,6 +60,11 @@ class Nube extends ChangeNotifier {
   /// la tabla donde viven. Son las mismas que usa la web.
   static const funcionCitas = 'citas';
   static const tablaCitas = 'citas';
+
+  /// La ficha que cada taller publica desde su panel (servicios con precio y
+  /// tiempo, extras). Pública: se lee sin sesión.
+  static const tablaTalleres = 'talleres';
+  final Map<String, FichaTaller?> _fichas = {};
 
   modelos.User? usuario;
 
@@ -441,6 +448,24 @@ class Nube extends ChangeNotifier {
     return novedades;
   }
 
+  /// La ficha publicada por un taller, o null si no publicó nada (o no hay
+  /// red, o la tabla no existe todavía). Se recuerda por sesión: abrir la
+  /// misma ficha tres veces no son tres viajes.
+  Future<FichaTaller?> fichaDeTaller(String lugarId) async {
+    final id = etiquetaDeTaller(lugarId);
+    if (id.isEmpty) return null;
+    if (_fichas.containsKey(id)) return _fichas[id];
+    try {
+      final fila = await _tablas.getRow(databaseId: bd, tableId: tablaTalleres, rowId: id);
+      final f = FichaTaller.deFila(fila.data);
+      _fichas[id] = f;
+      return f;
+    } catch (_) {
+      _fichas[id] = null;
+      return null;
+    }
+  }
+
   Future<void> _subir(Almacen almacen, String id, String uid) async {
     final tipo = almacen.tipoDe(id);
     final objeto = almacen.objetoJson(id);
@@ -464,6 +489,9 @@ class Nube extends ChangeNotifier {
     if (tipo == 'intervencion') {
       final f = (objeto['factura'] ?? '') as String;
       if (f.isNotEmpty) await _subirFoto(almacen, f);
+      for (final foto in ((objeto['fotos'] ?? []) as List)) {
+        if (foto.toString().isNotEmpty) await _subirFoto(almacen, foto.toString());
+      }
     }
   }
 
@@ -502,16 +530,67 @@ class Nube extends ChangeNotifier {
   Future<void> _bajarFotoSiFalta(
       Almacen almacen, String tipo, Object datos) async {
     if (tipo != 'intervencion' || datos is! Map) return;
-    final f = (datos['factura'] ?? '') as String;
-    if (f.isEmpty || almacen.ficheroFactura(f) != null) return;
-    try {
-      final bytes = await _archivos.getFileDownload(
-          bucketId: cubo, fileId: _idArchivo(f));
-      await almacen.guardarFacturaBajada(f, bytes);
-      almacen.marcarFotoSubida(f);
-    } on AppwriteException catch (e) {
-      if (e.code != 404) rethrow;
-      // No está en el servidor: la ficha lo dirá ("foto no disponible").
+    final ficheros = <String>[
+      (datos['factura'] ?? '') as String,
+      ...((datos['fotos'] ?? []) as List).map((x) => x.toString()),
+    ];
+    for (final f in ficheros) {
+      if (f.isEmpty || almacen.ficheroFactura(f) != null) continue;
+      try {
+        final bytes = await _archivos.getFileDownload(
+            bucketId: cubo, fileId: _idArchivo(f));
+        await almacen.guardarFacturaBajada(f, bytes);
+        almacen.marcarFotoSubida(f);
+      } on AppwriteException catch (e) {
+        if (e.code != 404) rethrow;
+        // No está en el servidor: la ficha lo dirá ("foto no disponible").
+      }
     }
+  }
+
+  /// La dirección pública de una foto del informe del taller. El taller la
+  /// sube con lectura pública y un id imposible de adivinar, así que se pinta
+  /// sin más sesión que la que haya.
+  static String urlFotoInforme(String id) =>
+      '$endpoint/storage/buckets/$cubo/files/$id/view?project=$proyecto';
+
+  /// Baja las fotos del informe de una cita a la carpeta de la app y devuelve
+  /// sus nombres de fichero, para que pasen al diario con la intervención.
+  /// Las que ya estaban bajadas no se vuelven a pedir; las que fallan se
+  /// saltan (la anotación vale igual, solo falta esa imagen).
+  Future<List<String>> bajarFotosDelInforme(Almacen almacen, Cita c) async {
+    final bajadas = Map<String, String>.from(c.fotosBajadas);
+    final nombres = <String>[];
+    for (final f in c.informeFotos) {
+      final clave = f.id.isNotEmpty ? f.id : f.datos.hashCode.toString();
+      final previo = bajadas[clave];
+      if (previo != null && almacen.ficheroFactura(previo) != null) {
+        nombres.add(previo);
+        continue;
+      }
+      try {
+        List<int> bytes;
+        if (f.id.isNotEmpty) {
+          final r = await http.get(Uri.parse(urlFotoInforme(f.id))).timeout(const Duration(seconds: 20));
+          if (r.statusCode != 200) continue;
+          bytes = r.bodyBytes;
+        } else {
+          final coma = f.datos.indexOf(',');
+          if (coma < 0) continue;
+          bytes = base64Decode(f.datos.substring(coma + 1));
+        }
+        final nombre = '${nuevoId('f')}.jpg';
+        await almacen.guardarFacturaBajada(nombre, bytes);
+        bajadas[clave] = nombre;
+        nombres.add(nombre);
+      } catch (_) {
+        // sin red o foto borrada: se sigue con las demás
+      }
+    }
+    if (bajadas.isNotEmpty) {
+      c.informe['_bajadas'] = bajadas;
+      await almacen.guardarCita(c);
+    }
+    return nombres;
   }
 }

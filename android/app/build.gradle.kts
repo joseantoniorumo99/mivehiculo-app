@@ -58,6 +58,8 @@ android {
 
     buildTypes {
         release {
+            // Reglas de R8: solo silencia clases de ML Kit que no se incluyen.
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = if (hayFirmaDeRelease) {
                 signingConfigs.getByName("release")
             } else {

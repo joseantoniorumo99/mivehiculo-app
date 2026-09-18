@@ -311,9 +311,9 @@ class Almacen extends ChangeNotifier {
   Future<void> guardarIntervencion(Intervencion i) async {
     final pos = diario.indexWhere((d) => d.id == i.id);
     if (pos >= 0) {
-      // Si cambia la foto, la vieja se borra: sin dueño no vale para nada.
-      if (diario[pos].factura.isNotEmpty && diario[pos].factura != i.factura) {
-        await _borrarFactura(diario[pos].factura);
+      // Si cambia una foto, la vieja se borra: sin dueño no vale para nada.
+      for (final f in diario[pos].ficheros) {
+        if (!i.ficheros.contains(f)) await _borrarFactura(f);
       }
       diario[pos] = i;
     } else {
@@ -327,7 +327,9 @@ class Almacen extends ChangeNotifier {
   Future<void> borrarIntervencion(String id) async {
     final pos = diario.indexWhere((d) => d.id == id);
     if (pos < 0) return;
-    await _borrarFactura(diario[pos].factura);
+    for (final f in diario[pos].ficheros) {
+      await _borrarFactura(f);
+    }
     diario.removeAt(pos);
     _marcarBorrado(id);
     await _guardar();

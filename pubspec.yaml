@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.3.0+4
+version: 1.4.0+5
 
 environment:
   sdk: ^3.13.3
@@ -85,6 +85,10 @@ dependencies:
   # informe". Locales de verdad: los pone la propia app al sincronizar, sin
   # servicio de notificaciones push de pago.
   flutter_local_notifications: ^19.0.0
+
+  # Leer la ficha tecnica de una foto, en el propio movil y sin conexion. El
+  # bastidor y la matricula no salen del telefono. Modelo latino incluido.
+  google_mlkit_text_recognition: ^0.17.1
 
 dev_dependencies:
   flutter_test:

@@ -1,15 +1,22 @@
 /// LA FICHA DE UN SITIO: qué es, dónde, cuándo abre, qué hace, y las tres
 /// acciones que importan: llamar, cómo llegar, pedir cita.
+///
+/// Si el taller publicó su ficha desde el panel, lo que él escribió manda:
+/// sus servicios con tiempo aproximado y precio de partida, y lo que ofrece
+/// además (recogida a domicilio, coche de sustitución…). Lo de OpenStreetMap
+/// queda para los que no lo han hecho, y se dice de dónde sale cada cosa.
 library;
 
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../datos/mantenimiento.dart' show enEuros, fechaCorta;
+import '../estado.dart';
 import '../lugares/lugares.dart';
 import '../tema.dart';
 import 'pedir_cita.dart';
 
-class PantallaFichaLugar extends StatelessWidget {
+class PantallaFichaLugar extends StatefulWidget {
   final Lugar lugar;
   final double distancia;
 
@@ -25,6 +32,35 @@ class PantallaFichaLugar extends StatelessWidget {
     required this.distanciaDesdeTi,
     this.servicio,
   });
+
+  @override
+  State<PantallaFichaLugar> createState() => _PantallaFichaLugarState();
+}
+
+class _PantallaFichaLugarState extends State<PantallaFichaLugar> {
+  FichaTaller? _publicada;
+
+  Lugar get lugar => widget.lugar;
+  double get distancia => widget.distancia;
+  bool get distanciaDesdeTi => widget.distanciaDesdeTi;
+  String? get servicio => widget.servicio;
+
+  @override
+  void initState() {
+    super.initState();
+    if (lugar.esTaller) {
+      context.nube.fichaDeTaller(lugar.id).then((f) {
+        if (mounted && f != null) setState(() => _publicada = f);
+      });
+    }
+  }
+
+  /// Al pedir cita, los servicios que publicó el taller mandan.
+  Lugar get _lugarParaCita {
+    final p = _publicada;
+    if (p == null || p.servicios.isEmpty) return lugar;
+    return lugar.conServicios(p.servicios.map((s) => s.nombre).toList());
+  }
 
   Future<void> _abrir(BuildContext context, Uri uri) async {
     try {
@@ -91,7 +127,7 @@ class PantallaFichaLugar extends StatelessWidget {
                 onPressed: () => Navigator.push(
                     context,
                     MaterialPageRoute(
-                        builder: (_) => PantallaPedirCita(lugar: lugar, servicio: servicio))),
+                        builder: (_) => PantallaPedirCita(lugar: _lugarParaCita, servicio: servicio))),
                 icon: const Icon(Icons.event_available),
                 label: const Text('Pedir cita'),
               ),
@@ -116,7 +152,8 @@ class PantallaFichaLugar extends StatelessWidget {
                 ],
               ),
             ),
-            if (lugar.servicios.isNotEmpty) ...[
+            if (_publicada != null) ..._loQuePublica(_publicada!),
+            if (_publicada == null && lugar.servicios.isNotEmpty) ...[
               const TituloSeccion('Servicios que declara'),
               Wrap(
                 spacing: 8,
@@ -139,6 +176,72 @@ class PantallaFichaLugar extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  /// Lo que el taller publicó él mismo: servicios con tiempo y precio, y
+  /// extras. Se distingue a la vista de lo de OpenStreetMap.
+  List<Widget> _loQuePublica(FichaTaller f) {
+    final buscado = servicio?.toLowerCase();
+    return [
+      TituloSeccion('Lo que publica el taller',
+          accion: f.actualizado.length >= 10
+              ? Text(fechaCorta(f.actualizado.substring(0, 10)),
+                  style: const TextStyle(fontSize: 12, color: Tono.tintaSuave))
+              : null),
+      if (f.servicios.isNotEmpty)
+        Tarjeta(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          child: Column(
+            children: f.servicios.map((s) {
+              final destacado = buscado != null && s.nombre.toLowerCase() == buscado;
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 7),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(s.nombre,
+                              style: TextStyle(
+                                  fontWeight: destacado ? FontWeight.w800 : FontWeight.w600,
+                                  color: destacado ? Tono.azulTinta : Tono.tinta)),
+                          if (s.tiempo.isNotEmpty)
+                            Text('Tiempo aproximado: ${s.tiempo}',
+                                style: const TextStyle(fontSize: 12, color: Tono.tintaSuave)),
+                        ],
+                      ),
+                    ),
+                    Text(
+                      s.precio != null ? 'desde ${enEuros(s.precio)}' : 'sin precio',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: s.precio != null ? Tono.tinta : Tono.tintaSuave,
+                          fontFeatures: const [FontFeature.tabularFigures()]),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      if (f.extras.isNotEmpty) ...[
+        const Padding(
+          padding: EdgeInsets.only(bottom: 8),
+          child: Text('Además', style: TextStyle(fontWeight: FontWeight.w700)),
+        ),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: f.extras.map((e) => ChipEstado(e, tono: TonoEstado.accion)).toList(),
+        ),
+        const SizedBox(height: 8),
+      ],
+      const Text(
+        'Publicado por el propio taller desde su panel. Los precios son de partida.',
+        style: TextStyle(fontSize: 12, color: Tono.tintaSuave),
+      ),
+    ];
   }
 
   List<Widget> _diasHorario(List<List<List<int>>> h) {

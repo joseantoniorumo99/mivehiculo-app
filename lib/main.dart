@@ -1,4 +1,4 @@
-/// MI VEHÍCULO — app nativa de Android. Versión 1.3.0: la vista del cliente.
+/// MI VEHÍCULO — app nativa de Android. Versión 1.4.0: la vista del cliente.
 ///
 /// Cinco pestañas: Inicio, Diario, OBD, Mapa y Perfil. Todo lo que sabe
 /// hacer la web para el dueño del coche, más lo que la web no puede: hablar

@@ -4,7 +4,7 @@
 /// ella sale gratis el mes de matriculación (y con él la ITV exacta), y
 /// porque es lo único que el dueño sabe de memoria. Marca, modelo y motor
 /// vienen del catálogo de matriculaciones reales, con autocompletar y no con
-/// un desplegable: con 955 modelos un desplegable en un móvil es inservible.
+/// un desplegable: con 763 modelos un desplegable en un móvil es inservible.
 ///
 /// LO QUE ESTA PANTALLA NO HACE: adivinar marca y modelo por la matrícula.
 /// Eso solo lo da la DGT o un proveedor de pago, y una app que "deduce" el
@@ -13,8 +13,11 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../datos/catalogo.dart';
+import '../datos/ficha_tecnica.dart';
+import '../datos/ocr_ficha.dart';
 import '../datos/mantenimiento.dart';
 import '../datos/matricula.dart';
 import '../datos/modelo.dart';
@@ -27,6 +30,70 @@ class PantallaAltaVehiculo extends StatefulWidget {
 
   @override
   State<PantallaAltaVehiculo> createState() => _PantallaAltaVehiculoState();
+}
+
+/// La tarjeta ITV en esquema: los códigos y qué es cada uno, en el orden en
+/// que van impresos. No es un ejemplo con datos —no hay ninguno inventado—,
+/// es el mapa de dónde mirar.
+class _EsquemaFicha extends StatelessWidget {
+  const _EsquemaFicha();
+
+  static const _filas = [
+    ('A', 'Matrícula'),
+    ('B', 'Fecha de primera matriculación'),
+    ('D.1', 'Marca'),
+    ('D.2', 'Tipo, variante y versión'),
+    ('D.3', 'Denominación comercial (modelo)'),
+    ('E', 'Número de bastidor (17 caracteres)'),
+    ('P.1', 'Cilindrada (cm³)'),
+    ('P.2', 'Potencia (kW)'),
+    ('P.3', 'Combustible'),
+  ];
+
+  @override
+  Widget build(BuildContext context) => Container(
+        decoration: BoxDecoration(
+          color: const Color(0xFFEAF2FB),
+          border: Border.all(color: Tono.azul.withValues(alpha: 0.35)),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('TARJETA ITV · FICHA TÉCNICA',
+                style: TextStyle(fontSize: 10, letterSpacing: 1.2, fontWeight: FontWeight.w800, color: Tono.azulTinta)),
+            const SizedBox(height: 6),
+            ..._filas.map((f) => Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 36,
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        decoration: BoxDecoration(
+                            color: Colors.white, borderRadius: BorderRadius.circular(4)),
+                        child: Text(f.$1,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, fontFamily: 'monospace')),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Container(
+                          height: 14,
+                          decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.7), borderRadius: BorderRadius.circular(3)),
+                          alignment: Alignment.centerLeft,
+                          padding: const EdgeInsets.only(left: 6),
+                          child: Text(f.$2, style: const TextStyle(fontSize: 10, color: Tono.tintaSuave)),
+                        ),
+                      ),
+                    ],
+                  ),
+                )),
+          ],
+        ),
+      );
 }
 
 class _PantallaAltaVehiculoState extends State<PantallaAltaVehiculo> {
@@ -57,6 +124,147 @@ class _PantallaAltaVehiculoState extends State<PantallaAltaVehiculo> {
   /// recordarla para que el desplegable enseñe lo que se eligió.
   String? _motorElegido;
   bool _guardando = false;
+
+  /// Lo que se leyó de la foto de la ficha técnica y no tiene campo en el
+  /// formulario: el bastidor se guarda con el coche; la cilindrada y la
+  /// potencia sirven para preseleccionar la motorización.
+  String _bastidorLeido = '';
+  int? _cilindradaLeida;
+  int? _potenciaLeida;
+  bool _leyendoFicha = false;
+  String? _notaFicha;
+
+  /// La foto de la ficha técnica: ML Kit saca el texto, `leerFichaTecnica`
+  /// lo interpreta, y aquí se RELLENAN LOS HUECOS. Lo que el dueño ya
+  /// escribió no se toca: propone, no decide.
+  Future<void> _leerFichaTecnica(ImageSource origen) async {
+    final elegida = await ImagePicker().pickImage(source: origen, maxWidth: 2400, imageQuality: 92);
+    if (elegida == null || !mounted) return;
+    setState(() {
+      _leyendoFicha = true;
+      _notaFicha = null;
+    });
+    try {
+      final texto = await textoDeLaFoto(elegida.path);
+      final d = leerFichaTecnica(texto, marcasConocidas: _catalogo?.listaMarcas ?? const []);
+      if (!mounted) return;
+      if (!d.hayAlgo) {
+        setState(() => _notaFicha = 'No se ha podido leer nada claro. Prueba con más luz, la tarjeta plana y sin reflejos.');
+        return;
+      }
+      final rellenado = <String>[];
+      setState(() {
+        if (d.matricula != null && _matricula.text.trim().isEmpty) {
+          _matricula.text = d.matricula!;
+          rellenado.add('matrícula');
+        }
+        if (d.marca != null && _marca.text.trim().isEmpty) {
+          _marca.text = d.marca!;
+          rellenado.add('marca');
+        }
+        if (d.modelo != null && _modelo.text.trim().isEmpty) {
+          _modelo.text = _modeloDelCatalogo(d.modelo!);
+          rellenado.add('modelo');
+        }
+        if (d.matriculacion != null) {
+          if (_matriculacion.text.trim().isEmpty) _matriculacion.text = d.matriculacion!.substring(0, 7);
+          if (_anio.text.trim().isEmpty) {
+            _anio.text = '${d.anio}';
+            rellenado.add('año');
+          }
+        }
+        if (d.combustible != null && _combustible.isEmpty) {
+          _combustible = d.combustible!;
+          rellenado.add('combustible');
+        }
+        if (d.bastidor != null) {
+          _bastidorLeido = d.bastidor!;
+          rellenado.add('bastidor');
+        }
+        _cilindradaLeida = d.cilindrada;
+        _potenciaLeida = d.potenciaKw;
+        _elegirMotorPorFicha();
+        final noLeido = ['matrícula', 'marca', 'modelo', 'fecha de matriculación', 'combustible', 'bastidor']
+            .where((x) => !d.leido.contains(x))
+            .toList();
+        final leidoTexto = rellenado.isEmpty
+            ? 'Leído, pero los campos ya estaban escritos: no se ha cambiado nada.'
+            : 'Rellenado desde la ficha: ${rellenado.join(', ')}.';
+        final faltaTexto = noLeido.isEmpty ? '' : ' No se ha leído: ${noLeido.join(', ')}.';
+        _notaFicha = '$leidoTexto$faltaTexto Revísalo antes de guardar.';
+      });
+    } catch (e) {
+      if (mounted) setState(() => _notaFicha = 'No se ha podido leer la foto: $e');
+    } finally {
+      if (mounted) setState(() => _leyendoFicha = false);
+    }
+  }
+
+  /// "C3" leído → "C3" del catálogo si existe con esa marca; si no, tal cual.
+  String _modeloDelCatalogo(String leido) {
+    final c = _catalogo;
+    if (c == null || _marca.text.isEmpty) return leido;
+    final l = leido.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+    for (final m in c.modelosDe(_marca.text)) {
+      if (m.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '') == l) return m;
+    }
+    return leido;
+  }
+
+  /// Con cilindrada y potencia de la ficha, la motorización sale sola: es el
+  /// dato exacto (1.560 cm³ y 73 kW es el 1.6 HDi de 100 CV, sin adivinar).
+  void _elegirMotorPorFicha() {
+    final cc = _cilindradaLeida;
+    if (cc == null) return;
+    final cv = _potenciaLeida == null ? null : (_potenciaLeida! * 1.35962).round();
+    Motor? mejor;
+    for (final m in _motores) {
+      if ((m.cilindrada - cc).abs() > 30) continue;
+      if (_combustible.isNotEmpty && m.combustible != _combustible) continue;
+      if (cv != null && m.cv > 0 && (m.cv - cv).abs() > 6) continue;
+      if (mejor == null || (cv != null && m.cv > 0 && mejor.cv == 0)) mejor = m;
+    }
+    if (mejor != null) {
+      _motorElegido = mejor.etiquetaLarga;
+      _combustible = mejor.combustible;
+    }
+  }
+
+  /// La tarjeta ITV, dibujada: dónde está cada dato. Se enseña al dueño para
+  /// que sepa qué fotografiar (y qué es "la ficha técnica", que no todo el
+  /// mundo lo sabe).
+  void _explicarFichaTecnica() {
+    showDialog(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('La ficha técnica'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Es la tarjeta azul o verde que va con el permiso de circulación '
+                '(tarjeta ITV). Lleva los datos del coche con códigos fijos; la app '
+                'busca esos códigos en la foto:',
+                style: TextStyle(height: 1.4),
+              ),
+              const SizedBox(height: 12),
+              _EsquemaFicha(),
+              const SizedBox(height: 10),
+              const Text(
+                'Haz la foto con la tarjeta plana, con luz y sin reflejos. La foto no '
+                'sale del móvil.',
+                style: TextStyle(fontSize: 12, color: Tono.tintaSuave, height: 1.4),
+              ),
+            ],
+          ),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('Entendido'))],
+      ),
+    );
+  }
 
   /// EL AÑO QUE ESCRIBE EL DUEÑO MANDA sobre lo que diga la matrícula. La
   /// matrícula data la matriculación EN ESPAÑA: un coche importado de segunda
@@ -170,6 +378,7 @@ class _PantallaAltaVehiculoState extends State<PantallaAltaVehiculo> {
       ..matriculacion = _matriculacion.text.trim()
       ..combustible = _combustible
       ..adBlue = _adBlue;
+    if (_bastidorLeido.isNotEmpty && v.bastidor.isEmpty) v.bastidor = _bastidorLeido;
 
     if (_esEdicion) {
       final repetida = almacen.vehiculoConMatricula(v.matricula, excepto: v.id);
@@ -206,6 +415,63 @@ class _PantallaAltaVehiculoState extends State<PantallaAltaVehiculo> {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
             children: [
+              if (!_esEdicion || _bastidorLeido.isEmpty) ...[
+                Tarjeta(
+                  color: Tono.azulFilm,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.badge_outlined, color: Tono.azulTinta),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text('¿Tienes la ficha técnica a mano?',
+                                style: TextStyle(fontWeight: FontWeight.w700, color: Tono.azulTinta)),
+                          ),
+                          TextButton(
+                            onPressed: _explicarFichaTecnica,
+                            child: const Text('¿Qué es?'),
+                          ),
+                        ],
+                      ),
+                      const Text(
+                        'Hazle una foto y se rellenan solos la marca, el modelo, la fecha, '
+                        'el combustible, el motor y el bastidor. Tú revisas y guardas.',
+                        style: TextStyle(height: 1.4),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: FilledButton.icon(
+                              onPressed: _leyendoFicha ? null : () => _leerFichaTecnica(ImageSource.camera),
+                              icon: _leyendoFicha
+                                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                                  : const Icon(Icons.photo_camera_outlined),
+                              label: Text(_leyendoFicha ? 'Leyendo…' : 'Hacer foto'),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: _leyendoFicha ? null : () => _leerFichaTecnica(ImageSource.gallery),
+                              icon: const Icon(Icons.photo_library_outlined),
+                              label: const Text('De la galería'),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (_notaFicha != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(_notaFicha!,
+                              style: const TextStyle(fontSize: 12, color: Tono.tinta, height: 1.4)),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
               TextFormField(
                 controller: _matricula,
                 textCapitalization: TextCapitalization.characters,

@@ -8,10 +8,13 @@
 /// informe del taller es la mejor factura que puede tener el expediente.
 library;
 
+import 'dart:convert' show base64Decode;
+
 import 'package:flutter/material.dart';
 
 import '../datos/mantenimiento.dart';
 import '../datos/modelo.dart';
+import '../datos/nube.dart';
 import '../estado.dart';
 import '../tema.dart';
 import 'elegir_taller.dart';
@@ -254,6 +257,10 @@ class PantallaCitas extends StatelessWidget {
           const SizedBox(height: 6),
           Text(c.informeNotas, style: const TextStyle(height: 1.4)),
         ],
+        if (c.informeFotos.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          _fotosInforme(context, c),
+        ],
         const SizedBox(height: 8),
         if (c.informeAnadido)
           const Row(
@@ -267,15 +274,86 @@ class PantallaCitas extends StatelessWidget {
           FilledButton.icon(
             onPressed: () async {
               final almacen = context.almacen;
-              await almacen.guardarIntervencion(c.informeComoIntervencion());
+              final nube = context.nube;
+              // Las fotos del taller se bajan a la carpeta de la app: así el
+              // diario las conserva aunque el servidor las pierda algún día.
+              final fotos = c.informeFotos.isEmpty
+                  ? const <String>[]
+                  : await nube.bajarFotosDelInforme(almacen, c);
+              await almacen.guardarIntervencion(c.informeComoIntervencion(fotos: fotos));
               c.informeAnadido = true;
               await almacen.guardarCita(c);
-              if (context.mounted) avisar(context, 'Añadido al diario con su desglose.');
+              if (context.mounted) {
+                avisar(context,
+                    'Añadido al diario con su desglose${fotos.isNotEmpty ? ' y ${fotos.length == 1 ? 'su foto' : '${fotos.length} fotos'}' : ''}.');
+              }
             },
             icon: const Icon(Icons.menu_book_outlined),
             label: const Text('Añadir al diario'),
           ),
       ],
+    );
+  }
+
+  /// Las fotos de las piezas, en miniatura; tocar una la abre entera.
+  Widget _fotosInforme(BuildContext context, Cita c) {
+    final bajadas = c.fotosBajadas;
+    return SizedBox(
+      height: 96,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: c.informeFotos.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        itemBuilder: (context, i) {
+          final f = c.informeFotos[i];
+          final local = bajadas[f.id.isNotEmpty ? f.id : f.datos.hashCode.toString()];
+          final fichero = local == null ? null : context.almacen.ficheroFactura(local);
+          Widget imagen;
+          if (fichero != null) {
+            imagen = Image.file(fichero, fit: BoxFit.cover);
+          } else if (f.id.isNotEmpty) {
+            imagen = Image.network(
+              Nube.urlFotoInforme(f.id),
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => const ColoredBox(
+                  color: Tono.suelo, child: Icon(Icons.broken_image_outlined, color: Tono.tintaSuave)),
+            );
+          } else {
+            final coma = f.datos.indexOf(',');
+            imagen = coma < 0
+                ? const SizedBox()
+                : Image.memory(base64Decode(f.datos.substring(coma + 1)), fit: BoxFit.cover);
+          }
+          return GestureDetector(
+            onTap: () => showDialog(
+              context: context,
+              builder: (_) => Dialog(
+                insetPadding: const EdgeInsets.all(12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(child: InteractiveViewer(child: imagen)),
+                    Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: Text(f.titulo, style: const TextStyle(fontWeight: FontWeight.w700)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            child: Column(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: SizedBox(width: 96, height: 72, child: imagen),
+                ),
+                const SizedBox(height: 3),
+                Text(f.titulo, style: const TextStyle(fontSize: 11, color: Tono.tintaSuave)),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 }

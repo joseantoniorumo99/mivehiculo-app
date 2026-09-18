@@ -14,6 +14,7 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../datos/consejos.dart';
 import '../datos/mantenimiento.dart';
 import '../datos/modelo.dart';
 import '../datos/panel.dart';
@@ -26,6 +27,7 @@ import 'editar_intervencion.dart';
 import 'elegir_taller.dart';
 import 'expediente.dart';
 import 'garaje.dart';
+import 'mejoras.dart';
 
 class PantallaInicio extends StatefulWidget {
   /// Para saltar a otra pestaña ('diario', 'obd', 'mapa', 'perfil').
@@ -113,6 +115,36 @@ class _PantallaInicioState extends State<PantallaInicio> {
                 else
                   ...avisos.take(3).map((a) => _filaAviso(context, a)),
                 const SizedBox(height: 8),
+                // Lo que le vendría bien al coche, más allá de lo que toca.
+                Builder(builder: (context) {
+                  final consejos = consejosPara(coche, diario);
+                  if (consejos.isEmpty) return const SizedBox.shrink();
+                  return Tarjeta(
+                    onTap: () => Navigator.push(
+                        context, MaterialPageRoute(builder: (_) => const PantallaMejoras())),
+                    child: Row(
+                      children: [
+                        const PozoIcono(Icons.auto_awesome_outlined),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Mejoras para tu coche',
+                                  style: TextStyle(fontWeight: FontWeight.w700)),
+                              Text(
+                                '${consejos.length} ${consejos.length == 1 ? 'consejo' : 'consejos'}: '
+                                '${consejos.first.titulo.toLowerCase()}${consejos.length > 1 ? ' y más' : ''}',
+                                style: const TextStyle(fontSize: 12, color: Tono.tintaSuave),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Icon(Icons.chevron_right, color: Tono.tintaSuave),
+                      ],
+                    ),
+                  );
+                }),
                 const TituloSeccion('Atajos'),
                 Row(
                   children: [

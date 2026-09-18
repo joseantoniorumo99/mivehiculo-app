@@ -173,6 +173,10 @@ class Intervencion {
   /// deja de existir.
   String factura;
 
+  /// Más fotos: las piezas antigua y nueva que manda el taller con su
+  /// informe, o las que haga el dueño. Nombres de fichero, como la factura.
+  List<String> fotos;
+
   Intervencion({
     String? id,
     required this.vehiculoId,
@@ -185,8 +189,13 @@ class Intervencion {
     this.coste,
     List<Linea>? lineas,
     this.factura = '',
+    List<String>? fotos,
   })  : id = id ?? nuevoId('i'),
-        lineas = lineas ?? [];
+        lineas = lineas ?? [],
+        fotos = fotos ?? [];
+
+  /// Todos los ficheros de imagen de esta anotación: la factura y las fotos.
+  List<String> get ficheros => [if (factura.isNotEmpty) factura, ...fotos];
 
   String get tituloEfectivo => titulo.trim().isNotEmpty
       ? titulo.trim()
@@ -217,6 +226,7 @@ class Intervencion {
         'coste': coste,
         'lineas': lineas.map((l) => l.aJson()).toList(),
         'factura': factura,
+        'fotos': fotos,
       };
 
   static Intervencion deJson(Map<String, dynamic> j) => Intervencion(
@@ -233,6 +243,7 @@ class Intervencion {
             .map((l) => Linea.deJson(Map<String, dynamic>.from(l as Map)))
             .toList(),
         factura: (j['factura'] ?? '') as String,
+        fotos: ((j['fotos'] ?? []) as List).map((f) => f.toString()).where((f) => f.isNotEmpty).toList(),
       );
 }
 
@@ -343,6 +354,23 @@ class Cita {
       .map((l) => Linea.deJson(Map<String, dynamic>.from(l)))
       .toList();
 
+  /// Las fotos del informe: `id` del fichero en el cubo del servidor (las que
+  /// subió el taller) o `datos` (una imagen pequeña dentro, en la demo web),
+  /// y `tipo` 'antigua' | 'nueva'.
+  List<FotoInforme> get informeFotos => ((informe['fotos'] ?? []) as List)
+      .whereType<Map>()
+      .map((f) => FotoInforme(
+            id: (f['id'] ?? '').toString(),
+            datos: (f['datos'] ?? '').toString(),
+            tipo: (f['tipo'] ?? '').toString(),
+          ))
+      .where((f) => f.id.isNotEmpty || f.datos.startsWith('data:'))
+      .toList();
+
+  /// Las fotos del informe que ya están bajadas a este móvil: id → fichero.
+  Map<String, String> get fotosBajadas =>
+      Map<String, String>.from((informe['_bajadas'] ?? <String, dynamic>{}) as Map);
+
   /// Lo que el taller ha hecho con la cita y que merece un aviso. El informe
   /// manda sobre el estado: si ya llegó, es lo último que ha pasado.
   String get suceso {
@@ -368,8 +396,8 @@ class Cita {
   /// El informe del taller convertido en una entrada del diario. Un solo tipo
   /// en las líneas → ese tipo; varios distintos → revisión general (poner
   /// "batería" porque aparece un motor de arranque escondería el brazo de
-  /// suspensión); ninguno → otro.
-  Intervencion informeComoIntervencion() {
+  /// suspensión); ninguno → otro. `fotos` son los ficheros ya bajados.
+  Intervencion informeComoIntervencion({List<String> fotos = const []}) {
     final lineas = informeLineas;
     final tipos = lineas.map((l) => l.tipo).where((t) => t.isNotEmpty).toSet();
     final tipo = tipos.length == 1 ? tipos.first : (tipos.length > 1 ? 'revision' : 'otro');
@@ -383,6 +411,7 @@ class Cita {
       km: informeKm,
       coste: informeTotal,
       lineas: lineas,
+      fotos: fotos,
     );
   }
 
@@ -431,6 +460,16 @@ class Cita {
         informeAnadido: (j['informeAnadido'] ?? false) as bool,
         avisado: (j['avisado'] ?? '') as String,
       );
+}
+
+/// Una foto del informe del taller.
+class FotoInforme {
+  final String id; // fichero en el cubo del servidor, o vacío
+  final String datos; // data: URL pequeña (demo), o vacío
+  final String tipo; // 'antigua' | 'nueva'
+  const FotoInforme({this.id = '', this.datos = '', this.tipo = ''});
+
+  String get titulo => tipo == 'nueva' ? 'Pieza nueva' : (tipo == 'antigua' ? 'Pieza antigua' : 'Foto');
 }
 
 /// Algo que ha hecho el taller con una cita y que el dueño todavía no sabe.

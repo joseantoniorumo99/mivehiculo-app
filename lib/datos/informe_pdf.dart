@@ -401,6 +401,7 @@ class InformePdf {
                 if (d.km != null) '${conMiles(d.km!)} km',
                 if (d.taller.isNotEmpty) d.taller,
                 if (d.factura.isNotEmpty) 'con factura adjunta en la app',
+                if (d.fotos.isNotEmpty) '${d.fotos.length} ${d.fotos.length == 1 ? 'foto' : 'fotos'} de las piezas en la app',
               ].join(' · '),
               style: pw.TextStyle(fontSize: 8.5, color: _suave),
             ),
