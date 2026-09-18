@@ -81,12 +81,17 @@ class _PantallaPedirCitaState extends State<PantallaPedirCita> {
     if (f != null) setState(() => _fecha = f);
   }
 
+  /// Se guarda en el móvil SIEMPRE, y luego se intenta mandar al taller si
+  /// hay cuenta. Si la función del servidor no está o no hay red, la cita se
+  /// queda anotada como antes y la pantalla lo dice: mejor media cita que un
+  /// botón que se traga lo que escribiste.
   Future<void> _guardar() async {
     final almacen = context.almacen;
+    final nube = context.nube;
     final coche = almacen.coche;
     if (coche == null) return;
     setState(() => _guardando = true);
-    await almacen.guardarCita(Cita(
+    final cita = Cita(
       vehiculoId: coche.id,
       lugarId: widget.lugar.id,
       lugarNombre: widget.lugar.nombre,
@@ -95,9 +100,25 @@ class _PantallaPedirCitaState extends State<PantallaPedirCita> {
       hora: _hora,
       nota: _nota.text.trim(),
       enviada: false,
-    ));
+    );
+    await almacen.guardarCita(cita);
+
+    var mensaje = 'Cita anotada. Llama al taller para confirmarla.';
+    if (nube.conSesion) {
+      final vehiculo = '${coche.nombre}${coche.matricula.isNotEmpty ? ' (${coche.matricula})' : ''}';
+      final r = await nube.enviarCita(cita, vehiculo);
+      if (r.remotoId != null) {
+        cita
+          ..enviada = true
+          ..remotoId = r.remotoId!;
+        await almacen.guardarCita(cita);
+        mensaje = 'Cita enviada al taller. Te avisaremos cuando conteste.';
+      } else if (r.error != null) {
+        mensaje = 'Anotada en tu móvil, pero no enviada: ${r.error}';
+      }
+    }
     if (!mounted) return;
-    avisar(context, 'Cita anotada. Llama al taller para confirmarla.');
+    avisar(context, mensaje);
     Navigator.pop(context);
   }
 
@@ -118,12 +139,17 @@ class _PantallaPedirCitaState extends State<PantallaPedirCita> {
               Text(widget.lugar.direccion, style: const TextStyle(color: Tono.tintaSuave)),
             const SizedBox(height: 16),
             Recuadro(
-              'Esta cita se anota en tu móvil; al taller todavía no le llega.',
-              consejo: tel.isNotEmpty
-                  ? 'Llama para confirmarla. Cuando el taller use la app, se enviará desde aquí.'
-                  : 'Este taller no tiene teléfono en el mapa: confírmala en persona. '
-                      'Cuando el taller use la app, se enviará desde aquí.',
-              tono: TonoEstado.atencion,
+              context.nube.conSesion
+                  ? 'La cita se envía al taller a través de tu cuenta.'
+                  : 'Esta cita se anota en tu móvil; al taller no le llega.',
+              consejo: context.nube.conSesion
+                  ? 'Si el taller todavía no usa la app, se queda anotada aquí y '
+                      'conviene llamar para confirmarla.'
+                  : tel.isNotEmpty
+                      ? 'Llama para confirmarla. Con cuenta, se enviaría desde aquí.'
+                      : 'Este taller no tiene teléfono en el mapa: confírmala en persona. '
+                          'Con cuenta, se enviaría desde aquí.',
+              tono: context.nube.conSesion ? TonoEstado.accion : TonoEstado.atencion,
               accion: tel.isEmpty
                   ? null
                   : TextButton.icon(

@@ -7,6 +7,10 @@
 ///   conduce. Es el bueno.
 /// · Cada X minutos: unos segundos de radio por intento, esté el coche donde
 ///   esté. Es el de "por si acaso".
+///
+/// Y abajo, EL REGISTRO: lo que el segundo plano ha hecho, línea a línea, y
+/// un botón para probarlo sin coche. Sin esto, "no me funcionó" no se puede
+/// convertir en un fallo concreto.
 library;
 
 import 'package:flutter/material.dart';
@@ -23,12 +27,14 @@ class PantallaLecturaAutomatica extends StatefulWidget {
   State<PantallaLecturaAutomatica> createState() => _PantallaLecturaAutomaticaState();
 }
 
-class _PantallaLecturaAutomaticaState extends State<PantallaLecturaAutomatica> {
+class _PantallaLecturaAutomaticaState extends State<PantallaLecturaAutomatica>
+    with WidgetsBindingObserver {
   ({String direccion, String nombre})? _coche;
   ({String direccion, String nombre})? _lector;
   int _cadaMinutos = 0;
   DateTime? _ultima;
   List<AparatoBluetooth> _emparejados = [];
+  List<String> _registro = [];
   String? _error;
   bool _cargando = true;
 
@@ -37,7 +43,32 @@ class _PantallaLecturaAutomaticaState extends State<PantallaLecturaAutomatica> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _cargar();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Al volver a la pantalla (después de la prueba, por ejemplo) se relee el
+  /// registro: lo ha escrito otro proceso.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState estado) {
+    if (estado == AppLifecycleState.resumed) _releerRegistro();
+  }
+
+  Future<void> _releerRegistro() async {
+    final r = await RegistroFondo.leer();
+    final u = await AjustesLecturaAutomatica.ultimaLecturaDeFondo();
+    if (mounted) {
+      setState(() {
+        _registro = r;
+        _ultima = u;
+      });
+    }
   }
 
   Future<void> _cargar() async {
@@ -45,6 +76,7 @@ class _PantallaLecturaAutomaticaState extends State<PantallaLecturaAutomatica> {
     _lector = await LectorRecordado.leer();
     _cadaMinutos = await AjustesLecturaAutomatica.cadaMinutos();
     _ultima = await AjustesLecturaAutomatica.ultimaLecturaDeFondo();
+    _registro = await RegistroFondo.leer();
     try {
       _emparejados = await Bluetooth().emparejados();
     } on ErrorBluetooth catch (e) {
@@ -58,11 +90,21 @@ class _PantallaLecturaAutomaticaState extends State<PantallaLecturaAutomatica> {
   Future<void> _elegirCoche(AparatoBluetooth? a) async {
     await AjustesLecturaAutomatica.ponerAparatoCoche(a?.direccion, a?.nombre);
     setState(() => _coche = a == null ? null : (direccion: a.direccion, nombre: a.nombre));
+    await _releerRegistro();
   }
 
   Future<void> _elegirCada(int minutos) async {
     await AjustesLecturaAutomatica.ponerCadaMinutos(minutos);
     setState(() => _cadaMinutos = minutos);
+    await _releerRegistro();
+  }
+
+  Future<void> _probar() async {
+    await AjustesLecturaAutomatica.probarAhora();
+    await _releerRegistro();
+    if (!mounted) return;
+    avisar(context,
+        'Lectura encolada. Sal de la app (botón de inicio) y vuelve en medio minuto: el registro dirá qué pasó.');
   }
 
   @override
@@ -91,8 +133,8 @@ class _PantallaLecturaAutomaticaState extends State<PantallaLecturaAutomatica> {
                   const TituloSeccion('Cuando el móvil se conecte al coche'),
                   const Text(
                     'Elige el Bluetooth del coche (el manos libres o la radio). Cuando el '
-                    'móvil se conecte a él, la app espera un minuto y lee el OBD. No gasta '
-                    'batería mientras no conduces: no hay nada vigilando.',
+                    'móvil se conecte a él, la app espera medio minuto y lee el OBD. No '
+                    'gasta batería mientras no conduces: no hay nada vigilando.',
                     style: TextStyle(color: Tono.tintaSuave, height: 1.4),
                   ),
                   const SizedBox(height: 10),
@@ -134,25 +176,55 @@ class _PantallaLecturaAutomaticaState extends State<PantallaLecturaAutomatica> {
                     showSelectedIcon: false,
                     onSelectionChanged: (s) => _elegirCada(s.first),
                   ),
-                  const SizedBox(height: 18),
-                  Tarjeta(
-                    color: Tono.sueloAlto,
-                    child: Text(
-                      _ultima == null
-                          ? 'Todavía no se ha hecho ninguna lectura automática.'
-                          : 'Última lectura automática: ${_ultima!.toLocal().day}/${_ultima!.toLocal().month} '
-                              'a las ${_ultima!.toLocal().hour}:${_ultima!.toLocal().minute.toString().padLeft(2, '0')}. '
-                              'Están en Diario → Lecturas del OBD.',
-                      style: const TextStyle(color: Tono.tintaSuave, height: 1.4),
+                  TituloSeccion(
+                    'Registro',
+                    accion: TextButton(
+                      onPressed: _releerRegistro,
+                      child: const Text('Actualizar'),
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  Text(
+                    _ultima == null
+                        ? 'Todavía no se ha hecho ninguna lectura automática.'
+                        : 'Última lectura automática: ${_ultima!.toLocal().day}/${_ultima!.toLocal().month} '
+                            'a las ${_ultima!.toLocal().hour}:${_ultima!.toLocal().minute.toString().padLeft(2, '0')}. '
+                            'Están en Diario → Lecturas del OBD.',
+                    style: const TextStyle(color: Tono.tintaSuave, height: 1.4),
+                  ),
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: _lector == null ? null : _probar,
+                    icon: const Icon(Icons.play_arrow),
+                    label: const Text('Probar el segundo plano ahora'),
+                  ),
+                  const SizedBox(height: 4),
                   const Text(
-                    'Las lecturas automáticas no emparejan ni preguntan nada: si el '
-                    'lector no contesta en unos segundos, lo dejan. Y nunca se repiten '
-                    'con menos de diez minutos entre una y otra.',
+                    'Encola una lectura por el mismo camino que usan el Bluetooth del '
+                    'coche y la periódica. Pulsa, sal de la app con el botón de inicio, '
+                    'espera medio minuto y vuelve: aquí abajo saldrá qué ha pasado, '
+                    'paso a paso. Con el coche en contacto guardará una lectura; sin '
+                    'él dirá que el lector no contesta, que también es información.',
                     style: TextStyle(fontSize: 12, color: Tono.tintaSuave),
                   ),
+                  const SizedBox(height: 12),
+                  Tarjeta(
+                    color: Tono.sueloAlto,
+                    child: _registro.isEmpty
+                        ? const Text('Nada apuntado todavía.',
+                            style: TextStyle(color: Tono.tintaSuave))
+                        : SelectableText(
+                            _registro.join('\n'),
+                            style: const TextStyle(fontFamily: 'monospace', fontSize: 11, height: 1.5),
+                          ),
+                  ),
+                  if (_registro.isNotEmpty)
+                    TextButton(
+                      onPressed: () async {
+                        await RegistroFondo.borrar();
+                        await _releerRegistro();
+                      },
+                      child: const Text('Vaciar el registro'),
+                    ),
                 ],
               ),
       ),

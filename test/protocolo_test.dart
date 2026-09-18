@@ -323,6 +323,49 @@ void main() {
     });
   });
 
+  /// VARIOS PID EN UNA PETICIÓN. Es lo que hace que la lectura en vivo vaya a
+  /// dos pasadas por segundo en vez de una cada dos. La respuesta larga llega
+  /// troceada en CAN, con la longitud delante y cada trozo numerado.
+  group('varios PID de una vez', () {
+    test('las respuestas largas de CAN traen número de trama, y se lee igual', () {
+      // "00A" es la longitud (no es un dato); "0:" y "1:" numeran los trozos
+      expect(aBytes('00A 0:410C1AF80D00 1:05 4B'),
+          [0x41, 0x0C, 0x1A, 0xF8, 0x0D, 0x00, 0x05, 0x4B]);
+      expect(aBytes('0:410C1AF8'), [0x41, 0x0C, 0x1A, 0xF8]);
+    });
+
+    test('seis datos en un viaje, en el orden pedido', () async {
+      final s = Sesion(TransporteSimulado(retardo: Duration.zero));
+      await s.iniciar();
+      final rs = await s.leerVarios([0x0C, 0x0D, 0x05, 0x04, 0x11, 0x42]);
+      expect(rs.map((l) => l.pid), [0x0C, 0x0D, 0x05, 0x04, 0x11, 0x42]);
+      expect(rs.first.valor, closeTo(1726, 0.01));
+      expect(rs.last.valor, closeTo(12.4, 0.001));
+    });
+
+    test('un coche que no lo entiende devuelve vacío, no basura', () async {
+      final s = Sesion(_Grabado(const {'010C0D1': 'NO DATA', '010C0D': '?'}));
+      await s.iniciar();
+      expect(await s.leerVarios([0x0C, 0x0D]), isEmpty);
+    });
+
+    test('lo que el coche no contesta dentro del grupo se salta sin romper el resto',
+        () async {
+      // 0x0A no está en el simulador: la respuesta trae 0C y 0D y nada más
+      final s = Sesion(TransporteSimulado(retardo: Duration.zero));
+      await s.iniciar();
+      final rs = await s.leerVarios([0x0C, 0x0A, 0x0D]);
+      expect(rs.map((l) => l.pid), [0x0C, 0x0D]);
+    });
+
+    test('el "1" del final no estropea una lectura normal', () async {
+      final s = Sesion(TransporteSimulado(retardo: Duration.zero));
+      await s.iniciar();
+      final l = await s.leerPid(0x0C, rapido: true);
+      expect(l!.valor, closeTo(1726, 0.01));
+    });
+  });
+
   group('el simulador no puede mentir', () {
     test('no anuncia un PID que luego no da', () async {
       // El mapa de soportados se CALCULA de la tabla de valores. Si se

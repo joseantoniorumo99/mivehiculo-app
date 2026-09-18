@@ -34,6 +34,7 @@ import 'package:appwrite/models.dart' as modelos;
 import 'package:flutter/foundation.dart';
 
 import 'almacen.dart';
+import 'modelo.dart';
 
 class Nube extends ChangeNotifier {
   static const endpoint = 'https://fra.cloud.appwrite.io/v1';
@@ -50,6 +51,12 @@ class Nube extends ChangeNotifier {
   late final Account _cuenta;
   late final TablesDB _tablas;
   late final Storage _archivos;
+  late final Functions _funciones;
+
+  /// La función del servidor que crea las citas con el permiso del taller, y
+  /// la tabla donde viven. Son las mismas que usa la web.
+  static const funcionCitas = 'citas';
+  static const tablaCitas = 'citas';
 
   modelos.User? usuario;
 
@@ -75,6 +82,7 @@ class Nube extends ChangeNotifier {
     _cuenta = Account(_cliente);
     _tablas = TablesDB(_cliente);
     _archivos = Storage(_cliente);
+    _funciones = Functions(_cliente);
   }
 
   bool get conSesion => usuario != null;
@@ -285,6 +293,109 @@ class Nube extends ChangeNotifier {
     // 4. Borrados pendientes de objetos que ya no están ni aquí ni allí.
     for (final id in almacen.idsBorrados.toList()) {
       if (!remotos.containsKey(id)) almacen.olvidarBorrado(id);
+    }
+
+    // 5. Las citas van por otra tabla: lo que haya decidido el taller.
+    await _sincronizarCitas(almacen);
+  }
+
+  // ---------------------------------------------------------------
+  // Citas: por la función del servidor, que es quien puede dar el permiso
+  // del taller
+  // ---------------------------------------------------------------
+
+  /// Manda la cita al servidor. La crea la función `citas` con el permiso
+  /// `label:<taller>` que un usuario no puede conceder; ahí se comprueban de
+  /// verdad la identidad y el correo verificado.
+  ///
+  /// Devuelve `remotoId` si llegó; `error` con un motivo para la persona si
+  /// la función dijo que no (correo sin verificar, fecha pasada); y
+  /// `sinServidor` si la función no está desplegada o no hay red, que no es
+  /// culpa de nadie y la cita se queda en el móvil como hasta ahora.
+  Future<({String? remotoId, String? error, bool sinServidor})> enviarCita(
+      Cita c, String vehiculo) async {
+    if (!conSesion) return (remotoId: null, error: null, sinServidor: true);
+    try {
+      final e = await _funciones.createExecution(
+        functionId: funcionCitas,
+        body: jsonEncode({
+          'tallerId': c.lugarId,
+          'tallerNombre': c.lugarNombre,
+          'servicio': c.servicio,
+          'fecha': c.fecha,
+          'hora': c.hora,
+          'vehiculo': vehiculo,
+        }),
+        xasync: false,
+      );
+      final cuerpo = e.responseBody.trim().isEmpty
+          ? <String, dynamic>{}
+          : Map<String, dynamic>.from(jsonDecode(e.responseBody) as Map);
+      if (cuerpo['ok'] == true && cuerpo['cita'] is Map) {
+        final fila = Map<String, dynamic>.from(cuerpo['cita'] as Map);
+        return (remotoId: fila[r'$id'] as String?, error: null, sinServidor: false);
+      }
+      final motivo = cuerpo['error'] as String?;
+      if (motivo != null && motivo.isNotEmpty) {
+        return (remotoId: null, error: motivo, sinServidor: false);
+      }
+      return (remotoId: null, error: null, sinServidor: true);
+    } on AppwriteException catch (e) {
+      // 404: la función no existe todavía. No es un error del usuario.
+      if (e.code == 404) return (remotoId: null, error: null, sinServidor: true);
+      return (remotoId: null, error: explicar(e), sinServidor: false);
+    } catch (_) {
+      return (remotoId: null, error: null, sinServidor: true);
+    }
+  }
+
+  /// Baja las citas del usuario de la tabla `citas` y pone al día el estado
+  /// de las locales: es por donde vuelve lo que decida el taller. Las que
+  /// existan allí y aquí no (pedidas desde la web) se traen al coche en uso.
+  Future<void> _sincronizarCitas(Almacen almacen) async {
+    final uid = usuario!.$id;
+    final coche = almacen.coche;
+    modelos.RowList pagina;
+    try {
+      pagina = await _tablas.listRows(
+        databaseId: bd,
+        tableId: tablaCitas,
+        queries: [Query.equal('clienteId', uid), Query.limit(100)],
+      );
+    } on AppwriteException catch (e) {
+      if (e.code == 404) return; // sin tabla de citas todavía: nada que bajar
+      rethrow;
+    }
+    for (final fila in pagina.rows) {
+      final d = fila.data;
+      final estado = Cita.estadoDeTexto(d['estado'] as String?);
+      Cita? local;
+      for (final c in almacen.citas) {
+        if (c.remotoId == fila.$id) {
+          local = c;
+          break;
+        }
+      }
+      if (local != null) {
+        if (local.estado != estado || !local.enviada) {
+          local
+            ..estado = estado
+            ..enviada = true;
+          await almacen.guardarCita(local);
+        }
+      } else if (coche != null) {
+        await almacen.guardarCita(Cita(
+          vehiculoId: coche.id,
+          lugarId: (d['tallerId'] ?? '') as String,
+          lugarNombre: (d['tallerNombre'] ?? '') as String,
+          servicio: (d['servicio'] ?? '') as String,
+          fecha: (d['fecha'] ?? '') as String,
+          hora: (d['hora'] ?? '') as String,
+          estado: estado,
+          enviada: true,
+          remotoId: fila.$id,
+        ));
+      }
     }
   }
 

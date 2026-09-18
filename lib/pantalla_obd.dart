@@ -386,24 +386,44 @@ class _PantallaObdState extends State<PantallaObd> with WidgetsBindingObserver {
     });
 
     final vivos = _lecturas.map((l) => l.pid).where(_pidsVivos.contains).toList();
+
+    /// De seis en seis mientras el coche lo entienda (CAN); si no, de uno en
+    /// uno pero con el "1" que evita la espera por más centralitas. Antes cada
+    /// pasada eran quince viajes al adaptador con 200 ms de espera cada uno:
+    /// dos segundos por refresco.
+    var deSeisEnSeis = true;
+    void poner(Lectura r) {
+      final i = _lecturas.indexWhere((l) => l.pid == r.pid);
+      if (i >= 0) _lecturas[i] = r;
+    }
+
     try {
       while (_enVivo && mounted) {
         if (DateTime.now().difference(_vivoDesde!).inMinutes >= 10) {
           _pararVivo(motivo: 'Diez minutos en vivo: se para solo para no gastar batería.');
           break;
         }
-        for (final pid in vivos) {
-          if (!_enVivo || !mounted) break;
-          final r = await sesion.leerPid(pid);
-          if (r == null) continue;
-          final i = _lecturas.indexWhere((l) => l.pid == pid);
-          if (i >= 0) _lecturas[i] = r;
+        if (deSeisEnSeis) {
+          for (var k = 0; k < vivos.length && _enVivo && mounted; k += 6) {
+            final grupo = vivos.sublist(k, k + 6 > vivos.length ? vivos.length : k + 6);
+            final rs = await sesion.leerVarios(grupo);
+            if (rs.isEmpty) {
+              deSeisEnSeis = false; // este coche no lo entiende: de uno en uno
+              break;
+            }
+            rs.forEach(poner);
+          }
+        } else {
+          for (final pid in vivos) {
+            if (!_enVivo || !mounted) break;
+            final r = await sesion.leerPid(pid, rapido: true);
+            if (r != null) poner(r);
+          }
         }
         if (!_enVivo || !mounted) break;
         setState(() => _pasadas++);
-        // Un respiro: el ELM327 no gana nada con más de una pasada por segundo
-        // y la pantalla tampoco.
-        await Future<void>.delayed(const Duration(milliseconds: 250));
+        // Un respiro corto para que la pantalla pinte entre pasada y pasada.
+        await Future<void>.delayed(const Duration(milliseconds: 60));
       }
     } catch (_) {
       // Se cayó el enlace (el coche se apagó, el lector se desenchufó): se

@@ -5,8 +5,9 @@ de lo que se le hace, los avisos de lo que toca, la lectura del motor por
 **OBD-II** con un lector ELM327 de Bluetooth clásico, los talleres cercanos y
 el expediente completo para enseñar cuando lo vendas.
 
-**Versión 1.1.0: la vista del dueño del coche.** Sin nada de talleres (ese
-lado vive en la versión web).
+**Versión 1.2.0: la vista del dueño del coche.** El lado del taller vive en
+la versión web (PC): las citas que se piden desde el móvil le llegan allí a
+través de la cuenta.
 
 ## Qué hace
 
@@ -34,8 +35,10 @@ lado vive en la versión web).
 - **Mapa**: talleres, gasolineras, lavaderos, recambios y desguaces de
   OpenStreetMap, con distancia desde ti, horario y «abierto ahora», llamar y
   cómo llegar. Un aviso lleva directo a los talleres que hacen eso.
-- **Citas**: se anotan en el móvil y se confirman llamando. Hasta que el
-  taller use la app, la pantalla lo dice con todas las letras.
+- **Citas**: con cuenta se envían al taller por la función del servidor (la
+  misma que usa la web) y el estado que ponga el taller vuelve al móvil al
+  sincronizar; sin cuenta, o si el taller no usa la app, se anotan en el móvil
+  y la pantalla dice que hay que llamar.
 - **Expediente**: el historial entero con los años sin documentar a la vista,
   para compartir como texto.
 - **Cuenta (opcional)**: sin ella todo funciona y vive en el móvil. Con ella,

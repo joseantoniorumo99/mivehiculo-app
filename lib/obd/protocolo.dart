@@ -356,9 +356,19 @@ List<int> aBytes(String texto) {
   final trozos = texto.split(RegExp(r'[\s>]+'));
   final hex = StringBuffer();
   for (final bruto in trozos) {
-    final t = bruto.replaceAll('.', '');
-    if (t.isEmpty || t.contains(':')) continue;
+    var t = bruto.replaceAll('.', '');
+
+    /// LAS RESPUESTAS LARGAS EN CAN llegan troceadas y cada trozo lleva su
+    /// número delante: `00A`, `0:410C1AF80D00`, `1:05...`. El número de trama
+    /// se quita y el dato se conserva; antes se tiraba el trozo ENTERO por
+    /// llevar dos puntos, y una petición de seis PID a la vez se quedaba sin
+    /// la mitad de la respuesta. La línea de longitud (`00A`, tres cifras) no
+    /// es un dato y se descarta por impar.
+    final m = RegExp(r'^[0-9A-Fa-f]:(.*)$').firstMatch(t);
+    if (m != null) t = m.group(1)!;
+    if (t.isEmpty) continue;
     if (!RegExp(r'^[0-9A-Fa-f]+$').hasMatch(t)) continue;
+    if (t.length.isOdd) continue;
     hex.write(t);
   }
   final s = hex.toString();
@@ -486,14 +496,22 @@ class Sesion {
       // ATZ contesta con su versión; los demás con OK. Si algo falla, se corta.
       if (esError(r) && c != 'ATZ') return false;
     }
+    // Tiempos adaptativos agresivos: el adaptador aprende cuánto tarda la
+    // centralita y no espera de más. Es opcional: hay clones que contestan
+    // "?" y da igual, por eso va fuera de la lista obligatoria.
+    await mandar('ATAT2');
     _iniciada = true;
     return true;
   }
 
   /// Los bytes de datos de un PID, sin interpretar. Devuelve null si el coche
   /// no contesta a eso.
-  Future<List<int>?> leerPidCrudo(int pid, {int? cuantos}) async {
-    final r = await mandar('01${_hex2(pid)}');
+  Future<List<int>?> leerPidCrudo(int pid, {int? cuantos, bool rapido = false}) async {
+    /// EL "1" DEL FINAL le dice al ELM327 que espere UNA respuesta y vuelva.
+    /// Sin él, tras contestar la centralita el adaptador se queda ~200 ms
+    /// esperando por si otra centralita también contesta. En una lectura en
+    /// vivo de quince datos eso son tres segundos de nada por pasada.
+    final r = await mandar('01${_hex2(pid)}${rapido ? '1' : ''}');
     if (esError(r)) return null;
 
     final bytes = aBytes(r);
@@ -520,21 +538,54 @@ class Sesion {
   /// hexadecimal. Antes se descartaba en silencio, y el resultado era una
   /// pantalla con menos datos de los que el coche había dado sin explicar por
   /// qué faltaban: la app parecía rota cuando el que no llegaba era yo.
-  Future<Lectura?> leerPid(int pid) async {
+  Future<Lectura?> leerPid(int pid, {bool rapido = false}) async {
     final def = pids[pid];
-    final datos = await leerPidCrudo(pid, cuantos: def?.bytes);
+    final datos = await leerPidCrudo(pid, cuantos: def?.bytes, rapido: rapido);
     if (datos == null) return null;
-
     if (def == null) {
       return Lectura(pid, 'PID 0x${_hex2(pid)}', '', null,
           texto: datos.map(_hex2).join(' '), crudo: datos);
     }
+    return _lecturaDe(pid, def, datos);
+  }
+
+  Lectura _lecturaDe(int pid, Pid def, List<int> datos) {
     if (def.describir != null) {
       return Lectura(pid, def.nombre, '', null,
           texto: def.describir!(datos), crudo: datos);
     }
     return Lectura(pid, def.nombre, def.unidad, def.calcular!(datos),
         crudo: datos);
+  }
+
+  /// VARIOS PID EN UNA SOLA PETICIÓN (hasta seis; solo lo entienden los coches
+  /// con CAN, que son todos desde 2008). Es lo que hace que la lectura en vivo
+  /// vaya a dos pasadas por segundo en vez de una cada dos: cada ida y vuelta
+  /// al adaptador cuesta más que los datos que trae, así que quince datos en
+  /// tres viajes es cinco veces mejor que en quince.
+  ///
+  /// La respuesta viene como `41` y luego, para cada PID, su número y sus
+  /// bytes, en el orden pedido. Si el coche no entiende la petición devuelve
+  /// vacío, y quien llama vuelve a pedir de uno en uno.
+  Future<List<Lectura>> leerVarios(List<int> pedidos, {bool rapido = true}) async {
+    final lista = pedidos.where(pids.containsKey).take(6).toList();
+    if (lista.isEmpty) return const [];
+    final r = await mandar('01${lista.map(_hex2).join()}${rapido ? '1' : ''}');
+    if (esError(r)) return const [];
+    final bytes = aBytes(r);
+    final i = bytes.indexOf(0x41);
+    if (i < 0) return const [];
+    final salida = <Lectura>[];
+    var j = i + 1;
+    while (j < bytes.length) {
+      final pid = bytes[j];
+      final def = pids[pid];
+      if (def == null || !lista.contains(pid)) break;
+      if (j + 1 + def.bytes > bytes.length) break;
+      salida.add(_lecturaDe(pid, def, bytes.sublist(j + 1, j + 1 + def.bytes)));
+      j += 1 + def.bytes;
+    }
+    return salida;
   }
 
   /// Lee lo que el coche DE VERDAD ofrece.

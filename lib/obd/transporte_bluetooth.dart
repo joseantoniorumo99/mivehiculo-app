@@ -94,7 +94,9 @@ class TransporteBluetooth implements Transporte {
         _pendiente.write(texto.substring(i + 1));
         return r.replaceAll(RegExp(r'[\r\n]+'), ' ').trim();
       }
-      await Future<void>.delayed(const Duration(milliseconds: 40));
+      // 15 ms y no 40: en una lectura en vivo cada respuesta esperaba de media
+      // 20 ms de más solo por mirar el buzón despacio.
+      await Future<void>.delayed(const Duration(milliseconds: 15));
     }
     // Lo que haya llegado, aunque no venga el prompt: mejor eso que nada
     final r = _pendiente.toString().replaceAll(RegExp(r'[\r\n]+'), ' ').trim();
@@ -232,15 +234,40 @@ class TransporteSimulado implements Transporte {
     if (c.startsWith('AT')) return 'OK';
 
     if (c.startsWith('01') && c.length >= 4) {
-      final pid = int.parse(c.substring(2, 4), radix: 16);
-      if ((pid & 0x1F) == 0) {
-        final mapa = _mapaSoportados(pid);
-        if (mapa == null) return 'NO DATA';
-        return '41${_hex(pid)}${mapa.map(_hex).join()}';
+      // El dígito suelto del final ("010C1") es cuántas respuestas esperar:
+      // no es parte de los PID y se quita.
+      final cuerpo = c.length.isOdd ? c.substring(2, c.length - 1) : c.substring(2);
+      final pedidos = <int>[];
+      for (var i = 0; i + 1 < cuerpo.length; i += 2) {
+        pedidos.add(int.parse(cuerpo.substring(i, i + 2), radix: 16));
       }
-      final crudo = _crudos[pid];
-      if (crudo == null) return 'NO DATA';
-      return '41${_hex(pid)}${crudo.map(_hex).join()}';
+      if (pedidos.length == 1 && (pedidos.first & 0x1F) == 0) {
+        final mapa = _mapaSoportados(pedidos.first);
+        if (mapa == null) return 'NO DATA';
+        return '41${_hex(pedidos.first)}${mapa.map(_hex).join()}';
+      }
+      final bytes = <int>[0x41];
+      for (final pid in pedidos) {
+        final crudo = _crudos[pid];
+        if (crudo == null) continue;
+        bytes
+          ..add(pid)
+          ..addAll(crudo);
+      }
+      if (bytes.length == 1) return 'NO DATA';
+      if (bytes.length <= 7) return bytes.map(_hex).join();
+
+      /// COMO LO MANDA UN COCHE CON CAN cuando no cabe en una trama: una línea
+      /// con la longitud en tres cifras y luego trozos numerados de siete
+      /// bytes. Si el analizador no lo entiende, esta prueba lo dice antes que
+      /// el coche.
+      final b = StringBuffer(bytes.length.toRadixString(16).toUpperCase().padLeft(3, '0'));
+      var trama = 0;
+      for (var i = 0; i < bytes.length; i += 7) {
+        b.write(' $trama:${bytes.sublist(i, i + 7 > bytes.length ? bytes.length : i + 7).map(_hex).join()}');
+        trama++;
+      }
+      return b.toString();
     }
 
     if (c == '03' || c == '07') {

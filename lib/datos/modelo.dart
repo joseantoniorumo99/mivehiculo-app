@@ -261,8 +261,14 @@ class Cita {
   String nota;
   EstadoCita estado;
 
-  /// Si de verdad llegó a un taller. Hoy siempre false y la pantalla lo dice.
+  /// Si de verdad llegó al taller: la creó la función del servidor con el
+  /// permiso del taller. Mientras sea false, la pantalla dice que hay que
+  /// llamar.
   bool enviada;
+
+  /// El id de la fila en el servidor, cuando se envió. Es por donde vuelve la
+  /// respuesta del taller (confirmada, rechazada) al sincronizar.
+  String remotoId;
 
   Cita({
     String? id,
@@ -275,6 +281,7 @@ class Cita {
     this.nota = '',
     this.estado = EstadoCita.solicitada,
     this.enviada = false,
+    this.remotoId = '',
   }) : id = id ?? nuevoId('c');
 
   Map<String, dynamic> aJson() => {
@@ -288,6 +295,17 @@ class Cita {
         'nota': nota,
         'estado': estado.name,
         'enviada': enviada,
+        'remotoId': remotoId,
+      };
+
+  /// Los estados del servidor son los de la web: "completada" allí es "hecha"
+  /// aquí, y lo que no se conozca se queda en "solicitada" en vez de romper.
+  static EstadoCita estadoDeTexto(String? t) => switch (t) {
+        'confirmada' => EstadoCita.confirmada,
+        'rechazada' => EstadoCita.rechazada,
+        'cancelada' => EstadoCita.cancelada,
+        'completada' || 'hecha' => EstadoCita.hecha,
+        _ => EstadoCita.solicitada,
       };
 
   static Cita deJson(Map<String, dynamic> j) => Cita(
@@ -299,11 +317,9 @@ class Cita {
         fecha: (j['fecha'] ?? '') as String,
         hora: (j['hora'] ?? '') as String,
         nota: (j['nota'] ?? '') as String,
-        estado: EstadoCita.values.firstWhere(
-          (e) => e.name == j['estado'],
-          orElse: () => EstadoCita.solicitada,
-        ),
+        estado: estadoDeTexto(j['estado'] as String?),
         enviada: (j['enviada'] ?? false) as bool,
+        remotoId: (j['remotoId'] ?? '') as String,
       );
 }
 
