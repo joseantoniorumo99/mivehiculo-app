@@ -12,8 +12,10 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../datos/informe_pdf.dart';
 import '../datos/mantenimiento.dart';
 import '../datos/modelo.dart';
 import '../estado.dart';
@@ -172,18 +174,21 @@ class PantallaExpediente extends StatelessWidget {
                         ),
                       )),
                 const SizedBox(height: 12),
-                FilledButton.icon(
+                _BotonInformePdf(coche: coche, diario: diario, lecturas: lecturas,
+                    citas: almacen.citasDelCoche),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
                   onPressed: () => SharePlus.instance.share(ShareParams(
                     text: textoExpediente(coche, diario, lecturas),
                     subject: 'Expediente de ${coche.nombre}',
                   )),
                   icon: const Icon(Icons.ios_share),
-                  label: const Text('Compartir el expediente'),
+                  label: const Text('Compartir como texto'),
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'Se comparte como texto, desde tu móvil a donde tú elijas. No pasa '
-                  'por ningún servidor.',
+                  'El informe se genera en tu móvil y se comparte a donde tú elijas '
+                  '(WhatsApp, correo, Drive). No pasa por ningún servidor.',
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 12, color: Tono.tintaSuave),
                 ),
@@ -231,6 +236,54 @@ class PantallaExpediente extends StatelessWidget {
     if (tramos.length == 1) return tramos.first;
     return '${tramos.sublist(0, tramos.length - 1).join(', ')} y ${tramos.last}';
   }
+}
+
+/// El botón del informe en PDF. Genera el documento en el móvil (medio segundo
+/// con un diario normal) y abre la hoja de compartir del sistema.
+class _BotonInformePdf extends StatefulWidget {
+  final Vehiculo coche;
+  final List<Intervencion> diario;
+  final List<LecturaGuardada> lecturas;
+  final List<Cita> citas;
+  const _BotonInformePdf(
+      {required this.coche, required this.diario, required this.lecturas, required this.citas});
+
+  @override
+  State<_BotonInformePdf> createState() => _BotonInformePdfState();
+}
+
+class _BotonInformePdfState extends State<_BotonInformePdf> {
+  bool _generando = false;
+
+  Future<void> _generar() async {
+    setState(() => _generando = true);
+    try {
+      final bytes = await InformePdf.construir(
+        coche: widget.coche,
+        diario: widget.diario,
+        lecturas: widget.lecturas,
+        citas: widget.citas,
+      );
+      final nombre = widget.coche.matricula.isNotEmpty
+          ? widget.coche.matricula.replaceAll(' ', '')
+          : widget.coche.nombre.replaceAll(' ', '-');
+      await Printing.sharePdf(bytes: bytes, filename: 'informe-$nombre.pdf');
+    } catch (e) {
+      if (mounted) avisar(context, 'No se pudo generar el informe: $e');
+    } finally {
+      if (mounted) setState(() => _generando = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => FilledButton.icon(
+        onPressed: _generando ? null : _generar,
+        icon: _generando
+            ? const SizedBox(
+                width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+            : const Icon(Icons.picture_as_pdf_outlined),
+        label: Text(_generando ? 'Generando el informe…' : 'Informe completo en PDF'),
+      );
 }
 
 /// El expediente como texto plano, para compartir. Sin adornos: lo que se

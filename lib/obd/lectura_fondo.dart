@@ -32,6 +32,7 @@ import 'package:workmanager/workmanager.dart';
 
 import '../datos/almacen.dart';
 import '../datos/modelo.dart';
+import '../datos/notificador.dart';
 import 'enlace_classic.dart';
 import 'lector_recordado.dart';
 import 'protocolo.dart';
@@ -166,6 +167,16 @@ Future<void> prepararLecturaEnFondo() async {
 @pragma('vm:entry-point')
 void despachadorDeFondo() {
   Workmanager().executeTask((tarea, datos) async {
+    // La comprobación de citas comparte despachador: WorkManager solo admite
+    // uno por app. Va antes y aparte para no mezclar sus fallos con el OBD.
+    if (tarea == tareaCitas) {
+      try {
+        await comprobarCitasEnFondo();
+      } catch (e) {
+        await RegistroFondo.apuntar('Citas: fallo: $e');
+      }
+      return true;
+    }
     if (tarea != tareaLecturaObd) return true;
     final motivo = (datos?['motivo'] ?? '?').toString();
     try {

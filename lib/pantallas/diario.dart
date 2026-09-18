@@ -17,6 +17,7 @@ import '../datos/modelo.dart';
 import '../estado.dart';
 import '../tema.dart';
 import 'editar_intervencion.dart';
+import 'elegir_taller.dart';
 import 'lecturas.dart';
 import 'ver_intervencion.dart';
 
@@ -36,6 +37,15 @@ class PantallaDiario extends StatelessWidget {
           appBar: AppBar(
             title: const Text('Diario'),
             actions: [
+              // Pedir cita desde donde se mira lo que le falta al coche, sin
+              // pasar por el mapa: los talleres que ya conoces salen primero.
+              if (coche != null)
+                IconButton(
+                  tooltip: 'Pedir cita',
+                  onPressed: () => Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => const PantallaElegirTaller())),
+                  icon: const Icon(Icons.event_available_outlined),
+                ),
               IconButton(
                 tooltip: 'Lecturas del OBD',
                 onPressed: () => Navigator.push(

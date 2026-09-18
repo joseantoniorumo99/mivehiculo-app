@@ -15,12 +15,15 @@ library;
 import 'package:flutter/material.dart';
 
 import '../datos/mantenimiento.dart';
+import '../datos/modelo.dart';
 import '../datos/panel.dart';
 import '../estado.dart';
 import '../tema.dart';
 import 'alta_vehiculo.dart';
 import 'avisos.dart';
+import 'citas.dart';
 import 'editar_intervencion.dart';
+import 'elegir_taller.dart';
 import 'expediente.dart';
 import 'garaje.dart';
 
@@ -77,6 +80,11 @@ class _PantallaInicioState extends State<PantallaInicio> {
                     );
                   },
                 ),
+                // Lo que el taller ha hecho con tus citas: confirmada (con su
+                // tiempo y forma de pago), rechazada, o el informe pendiente
+                // de pasar al diario. Desaparecen solos al pasar la fecha o al
+                // añadir el informe: no hay que "marcar como leído".
+                ..._citasQueImportan(context, almacen.citasDelCoche),
                 _selectorPeriodo(),
                 const SizedBox(height: 14),
                 _rejilla(context, metricas),
@@ -113,7 +121,8 @@ class _PantallaInicioState extends State<PantallaInicio> {
                     const SizedBox(width: 10),
                     Expanded(child: _atajo(Icons.bluetooth_searching, 'Leer OBD', () => widget.irA('obd'))),
                     const SizedBox(width: 10),
-                    Expanded(child: _atajo(Icons.map_outlined, 'Talleres', () => widget.irA('mapa'))),
+                    Expanded(child: _atajo(Icons.event_available, 'Pedir cita', () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => const PantallaElegirTaller())))),
                   ],
                 ),
               ],
@@ -429,6 +438,45 @@ class _PantallaInicioState extends State<PantallaInicio> {
         ],
       ),
     );
+  }
+
+  List<Widget> _citasQueImportan(BuildContext context, List<Cita> citas) {
+    final hoy = hoyIso();
+    final salida = <Widget>[];
+    void verCitas() => Navigator.push(context, MaterialPageRoute(builder: (_) => const PantallaCitas()));
+    for (final c in citas) {
+      if (salida.length >= 3) break;
+      final taller = c.lugarNombre.isEmpty ? 'El taller' : c.lugarNombre;
+      if (c.hayInforme && !c.informeAnadido) {
+        salida.add(Recuadro(
+          '$taller te ha mandado el informe'
+          '${c.informeTitulo.isNotEmpty ? ' de «${c.informeTitulo}»' : ''}',
+          consejo: 'Añádelo al diario de un toque: así cuenta en el expediente y en los avisos.',
+          tono: TonoEstado.accion,
+          accion: TextButton(onPressed: verCitas, child: const Text('Ver el informe')),
+        ));
+      } else if (c.estado == EstadoCita.confirmada && c.fecha.compareTo(hoy) >= 0) {
+        salida.add(Recuadro(
+          'Cita confirmada en $taller: ${fechaCorta(c.fecha)}'
+          '${c.hora.isNotEmpty ? ' a las ${c.hora}' : ''}',
+          consejo: c.textoRespuesta.isEmpty ? null : c.textoRespuesta,
+          tono: TonoEstado.calma,
+          accion: TextButton(onPressed: verCitas, child: const Text('Ver la cita')),
+        ));
+      } else if (c.estado == EstadoCita.rechazada && c.fecha.compareTo(hoy) >= 0) {
+        salida.add(Recuadro(
+          '$taller no puede atenderte el ${fechaCorta(c.fecha)}',
+          consejo: c.motivo.isNotEmpty ? c.motivo : 'Puedes pedir otra fecha o buscar otro taller.',
+          tono: TonoEstado.atencion,
+          accion: TextButton(
+            onPressed: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const PantallaElegirTaller())),
+            child: const Text('Pedir otra fecha'),
+          ),
+        ));
+      }
+    }
+    return salida;
   }
 
   Widget _atajo(IconData icono, String texto, VoidCallback alPulsar) => Tarjeta(

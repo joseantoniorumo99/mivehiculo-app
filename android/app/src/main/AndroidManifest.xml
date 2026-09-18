@@ -21,6 +21,11 @@
          pide confirmación la primera vez ("permitir instalar de esta app"). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
 
+    <!-- Avisos en la bandeja: "el taller ha confirmado tu cita", "te ha
+         mandado el informe". Desde Android 13 hay que pedirlo al dueño; se
+         pide al mandar una cita, que es cuando tiene sentido. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
     <application
         android:label="Mi Vehículo"
         android:name="${applicationName}"

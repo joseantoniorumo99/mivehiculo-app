@@ -12,6 +12,8 @@
 /// son `int?` y `double?`, y no `int` con cero por defecto.
 library;
 
+import 'dart:convert';
+
 /// Genera identificadores sin depender de un paquete: momento en milisegundos
 /// más un contador. No hacen falta UUID —esto no se sincroniza con nadie— y
 /// sí hace falta que dos anotaciones seguidas no compartan id.
@@ -244,12 +246,25 @@ const Map<EstadoCita, String> nombreEstadoCita = {
   EstadoCita.hecha: 'Hecha',
 };
 
+/// Cómo se paga en el taller, con la misma clave que guarda el panel web.
+const Map<String, String> formasDePago = {
+  'efectivo': 'en efectivo',
+  'tarjeta': 'con tarjeta',
+  'bizum': 'por Bizum',
+  'transferencia': 'por transferencia',
+};
+
 /// Una cita pedida a un taller.
 ///
-/// EN ESTA VERSIÓN NO SALE DEL MÓVIL: no hay servidor todavía, así que queda
-/// anotada como "solicitada" y la pantalla lo dice con todas las letras. Un
-/// botón que promete avisar a un taller y no avisa a nadie es peor que no
-/// tenerlo, porque el dueño se presenta allí el martes a las diez.
+/// Se anota en el móvil SIEMPRE y, con cuenta, se manda al taller por la
+/// función del servidor. Lo que el taller conteste vuelve al sincronizar:
+/// el estado (confirmada, rechazada), su RESPUESTA (tiempo aproximado, forma
+/// de pago, presupuesto, mensaje) y, cuando el coche ya pasó por allí, el
+/// INFORME de lo que se hizo, que el dueño añade a su diario de un toque.
+///
+/// Mientras `enviada` sea false, la pantalla dice que hay que llamar: un botón
+/// que promete avisar a un taller y no avisa a nadie es peor que no tenerlo,
+/// porque el dueño se presenta allí el martes a las diez.
 class Cita {
   String id;
   String vehiculoId;
@@ -270,6 +285,25 @@ class Cita {
   /// respuesta del taller (confirmada, rechazada) al sincronizar.
   String remotoId;
 
+  /// Lo que contestó el taller al aceptar o rechazar: `tiempo` (texto),
+  /// `pago` (clave de `formasDePago`), `presupuesto` (número, aproximado),
+  /// `mensaje`, `motivo` (si rechaza) y `cuando`. Vacío si no ha contestado.
+  Map<String, dynamic> respuesta;
+
+  /// El informe del taller cuando terminó: `titulo`, `fecha`, `km`, `total`
+  /// (con IVA), `lineas` [{concepto, importe, tipo}], `notas`, `cuando`.
+  /// Vacío mientras no lo mande.
+  Map<String, dynamic> informe;
+
+  /// Ya se pasó el informe al diario. Se recuerda para no ofrecerlo dos veces
+  /// y para no duplicar la intervención si se sincroniza de nuevo.
+  bool informeAnadido;
+
+  /// El último suceso del que ya se avisó al dueño ('confirmada',
+  /// 'rechazada', 'informe'). Con esto un aviso sale UNA vez, lo detecte la
+  /// app abierta o la comprobación en segundo plano.
+  String avisado;
+
   Cita({
     String? id,
     required this.vehiculoId,
@@ -282,7 +316,75 @@ class Cita {
     this.estado = EstadoCita.solicitada,
     this.enviada = false,
     this.remotoId = '',
-  }) : id = id ?? nuevoId('c');
+    Map<String, dynamic>? respuesta,
+    Map<String, dynamic>? informe,
+    this.informeAnadido = false,
+    this.avisado = '',
+  })  : id = id ?? nuevoId('c'),
+        respuesta = respuesta ?? {},
+        informe = informe ?? {};
+
+  bool get hayRespuesta => respuesta.isNotEmpty;
+  bool get hayInforme => informe.isNotEmpty;
+
+  String get tiempo => (respuesta['tiempo'] ?? '').toString().trim();
+  String get mensaje => (respuesta['mensaje'] ?? '').toString().trim();
+  String get motivo => (respuesta['motivo'] ?? '').toString().trim();
+  String get pago => formasDePago[(respuesta['pago'] ?? '').toString()] ?? '';
+  double? get presupuesto => _decimal(respuesta['presupuesto']);
+
+  String get informeTitulo => (informe['titulo'] ?? '').toString().trim();
+  String get informeFecha => (informe['fecha'] ?? '').toString().trim();
+  String get informeNotas => (informe['notas'] ?? '').toString().trim();
+  int? get informeKm => _entero(informe['km']);
+  double? get informeTotal => _decimal(informe['total']);
+  List<Linea> get informeLineas => ((informe['lineas'] ?? []) as List)
+      .whereType<Map>()
+      .map((l) => Linea.deJson(Map<String, dynamic>.from(l)))
+      .toList();
+
+  /// Lo que el taller ha hecho con la cita y que merece un aviso. El informe
+  /// manda sobre el estado: si ya llegó, es lo último que ha pasado.
+  String get suceso {
+    if (hayInforme) return 'informe';
+    if (estado == EstadoCita.confirmada) return 'confirmada';
+    if (estado == EstadoCita.rechazada) return 'rechazada';
+    return '';
+  }
+
+  /// La respuesta del taller en una frase, para la tarjeta y para el aviso.
+  String get textoRespuesta {
+    final partes = <String>[];
+    if (tiempo.isNotEmpty) partes.add('Tiempo aproximado: $tiempo');
+    final p = presupuesto;
+    if (p != null) {
+      final texto = p % 1 == 0 ? p.toStringAsFixed(0) : p.toStringAsFixed(2).replaceAll('.', ',');
+      partes.add('Presupuesto aprox.: $texto €');
+    }
+    if (pago.isNotEmpty) partes.add('Pago: $pago');
+    return partes.join(' · ');
+  }
+
+  /// El informe del taller convertido en una entrada del diario. Un solo tipo
+  /// en las líneas → ese tipo; varios distintos → revisión general (poner
+  /// "batería" porque aparece un motor de arranque escondería el brazo de
+  /// suspensión); ninguno → otro.
+  Intervencion informeComoIntervencion() {
+    final lineas = informeLineas;
+    final tipos = lineas.map((l) => l.tipo).where((t) => t.isNotEmpty).toSet();
+    final tipo = tipos.length == 1 ? tipos.first : (tipos.length > 1 ? 'revision' : 'otro');
+    return Intervencion(
+      vehiculoId: vehiculoId,
+      fecha: informeFecha.isNotEmpty ? informeFecha : fecha,
+      tipo: tipo,
+      titulo: informeTitulo.isNotEmpty ? informeTitulo : servicio,
+      taller: lugarNombre,
+      nota: informeNotas,
+      km: informeKm,
+      coste: informeTotal,
+      lineas: lineas,
+    );
+  }
 
   Map<String, dynamic> aJson() => {
         'id': id,
@@ -296,6 +398,10 @@ class Cita {
         'estado': estado.name,
         'enviada': enviada,
         'remotoId': remotoId,
+        'respuesta': respuesta,
+        'informe': informe,
+        'informeAnadido': informeAnadido,
+        'avisado': avisado,
       };
 
   /// Los estados del servidor son los de la web: "completada" allí es "hecha"
@@ -320,7 +426,56 @@ class Cita {
         estado: estadoDeTexto(j['estado'] as String?),
         enviada: (j['enviada'] ?? false) as bool,
         remotoId: (j['remotoId'] ?? '') as String,
+        respuesta: mapaTolerante(j['respuesta']),
+        informe: mapaTolerante(j['informe']),
+        informeAnadido: (j['informeAnadido'] ?? false) as bool,
+        avisado: (j['avisado'] ?? '') as String,
       );
+}
+
+/// Algo que ha hecho el taller con una cita y que el dueño todavía no sabe.
+/// Es lo que se convierte en un aviso en la bandeja del móvil.
+class NovedadCita {
+  final Cita cita;
+  final String suceso; // 'confirmada' | 'rechazada' | 'informe'
+  const NovedadCita(this.cita, this.suceso);
+
+  String get _taller => cita.lugarNombre.isEmpty ? 'El taller' : cita.lugarNombre;
+
+  String get titulo => switch (suceso) {
+        'confirmada' => '$_taller ha confirmado tu cita',
+        'rechazada' => '$_taller no puede atenderte ese día',
+        _ => '$_taller te ha mandado el informe',
+      };
+
+  String get cuerpo {
+    if (suceso == 'informe') {
+      final t = cita.informeTitulo.isNotEmpty ? cita.informeTitulo : cita.servicio;
+      final total = cita.informeTotal;
+      final precio = total == null ? '' : ' · ${total.toStringAsFixed(2).replaceAll('.', ',')} €';
+      return '$t$precio · Añádelo a tu diario desde Citas';
+    }
+    final cuando = '${cita.fecha}${cita.hora.isNotEmpty ? ' a las ${cita.hora}' : ''}';
+    if (suceso == 'rechazada') {
+      return cita.motivo.isNotEmpty ? cita.motivo : 'Cita del $cuando. Puedes pedir otra fecha.';
+    }
+    final r = cita.textoRespuesta;
+    return r.isNotEmpty ? r : 'Cita del $cuando';
+  }
+}
+
+/// Un mapa que puede venir como mapa, como texto JSON (así lo guarda la
+/// tabla del servidor) o como nada. Cualquier otra cosa es un mapa vacío.
+Map<String, dynamic> mapaTolerante(Object? v) {
+  if (v == null) return {};
+  if (v is Map) return Map<String, dynamic>.from(v);
+  if (v is String && v.trim().startsWith('{')) {
+    try {
+      final d = jsonDecode(v);
+      if (d is Map) return Map<String, dynamic>.from(d);
+    } catch (_) {}
+  }
+  return {};
 }
 
 /// Lecturas del OBD guardadas. No van al diario como una intervención —no se

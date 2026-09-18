@@ -32,6 +32,9 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // flutter_local_notifications usa java.time; en Android viejo no
+        // existe y hay que "desazucararlo" al compilar.
+        isCoreLibraryDesugaringEnabled = true
     }
 
     defaultConfig {
@@ -74,6 +77,7 @@ dependencies {
     // El receptor de Bluetooth encola trabajos de WorkManager él mismo; el
     // plugin lo trae como dependencia interna y no lo expone al proyecto.
     implementation("androidx.work:work-runtime:2.10.1")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
 
 flutter {

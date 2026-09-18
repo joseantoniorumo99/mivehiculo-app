@@ -26,6 +26,7 @@
 /// porte bien.
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -67,6 +68,11 @@ class Nube extends ChangeNotifier {
 
   bool sincronizando = false;
   DateTime? ultimaSincronizacion;
+
+  /// Lo que el taller ha hecho con una cita desde la última vez (confirmar,
+  /// rechazar, mandar el informe). Lo escucha la app para avisar.
+  final _novedades = StreamController<NovedadCita>.broadcast();
+  Stream<NovedadCita> get novedades => _novedades.stream;
 
   /// Lo último que pasó al sincronizar, para la pantalla del perfil. Null
   /// cuando fue bien.
@@ -295,8 +301,11 @@ class Nube extends ChangeNotifier {
       if (!remotos.containsKey(id)) almacen.olvidarBorrado(id);
     }
 
-    // 5. Las citas van por otra tabla: lo que haya decidido el taller.
-    await _sincronizarCitas(almacen);
+    // 5. Las citas van por otra tabla: lo que haya decidido el taller. Cada
+    //    novedad sale por el canal para que la app avise en la bandeja.
+    for (final n in await sincronizarCitas(almacen)) {
+      _novedades.add(n);
+    }
   }
 
   // ---------------------------------------------------------------
@@ -349,12 +358,19 @@ class Nube extends ChangeNotifier {
     }
   }
 
-  /// Baja las citas del usuario de la tabla `citas` y pone al día el estado
-  /// de las locales: es por donde vuelve lo que decida el taller. Las que
-  /// existan allí y aquí no (pedidas desde la web) se traen al coche en uso.
-  Future<void> _sincronizarCitas(Almacen almacen) async {
+  /// Baja las citas del usuario de la tabla `citas` y pone al día las
+  /// locales: es por donde vuelve lo que decida el taller (estado, respuesta
+  /// e informe). Las que existan allí y aquí no (pedidas desde la web) se
+  /// traen al coche en uso.
+  ///
+  /// Devuelve las NOVEDADES: cada cita cuyo último suceso (confirmada,
+  /// rechazada, informe) todavía no se había avisado. Se marca como avisado
+  /// aquí mismo, así que quien llame —la app abierta o la comprobación en
+  /// segundo plano— avisa una vez y el otro ya no.
+  Future<List<NovedadCita>> sincronizarCitas(Almacen almacen) async {
     final uid = usuario!.$id;
     final coche = almacen.coche;
+    final novedades = <NovedadCita>[];
     modelos.RowList pagina;
     try {
       pagina = await _tablas.listRows(
@@ -363,12 +379,18 @@ class Nube extends ChangeNotifier {
         queries: [Query.equal('clienteId', uid), Query.limit(100)],
       );
     } on AppwriteException catch (e) {
-      if (e.code == 404) return; // sin tabla de citas todavía: nada que bajar
+      if (e.code == 404) return novedades; // sin tabla de citas todavía
       rethrow;
     }
+    final hoy = DateTime.now();
+    final hace30 = hoy.subtract(const Duration(days: 30));
+    final limite = '${hace30.year}-${hace30.month.toString().padLeft(2, '0')}-${hace30.day.toString().padLeft(2, '0')}';
+
     for (final fila in pagina.rows) {
       final d = fila.data;
       final estado = Cita.estadoDeTexto(d['estado'] as String?);
+      final respuesta = mapaTolerante(d['respuesta']);
+      final informe = mapaTolerante(d['informe']);
       Cita? local;
       for (final c in almacen.citas) {
         if (c.remotoId == fila.$id) {
@@ -376,15 +398,9 @@ class Nube extends ChangeNotifier {
           break;
         }
       }
-      if (local != null) {
-        if (local.estado != estado || !local.enviada) {
-          local
-            ..estado = estado
-            ..enviada = true;
-          await almacen.guardarCita(local);
-        }
-      } else if (coche != null) {
-        await almacen.guardarCita(Cita(
+      if (local == null) {
+        if (coche == null) continue;
+        local = Cita(
           vehiculoId: coche.id,
           lugarId: (d['tallerId'] ?? '') as String,
           lugarNombre: (d['tallerNombre'] ?? '') as String,
@@ -394,9 +410,35 @@ class Nube extends ChangeNotifier {
           estado: estado,
           enviada: true,
           remotoId: fila.$id,
-        ));
+          respuesta: respuesta,
+          informe: informe,
+        );
+        // Una cita de hace más de un mes que llega de la web no es una
+        // novedad: se da por vista para no llenar la bandeja al estrenar.
+        if (local.fecha.compareTo(limite) < 0) local.avisado = local.suceso;
+        await almacen.guardarCita(local);
+      } else {
+        final cambia = local.estado != estado ||
+            !local.enviada ||
+            jsonEncode(local.respuesta) != jsonEncode(respuesta) ||
+            jsonEncode(local.informe) != jsonEncode(informe);
+        if (cambia) {
+          local
+            ..estado = estado
+            ..enviada = true
+            ..respuesta = respuesta
+            ..informe = informe;
+          await almacen.guardarCita(local);
+        }
+      }
+      final suceso = local.suceso;
+      if (suceso.isNotEmpty && suceso != local.avisado) {
+        local.avisado = suceso;
+        await almacen.guardarCita(local);
+        novedades.add(NovedadCita(local, suceso));
       }
     }
+    return novedades;
   }
 
   Future<void> _subir(Almacen almacen, String id, String uid) async {

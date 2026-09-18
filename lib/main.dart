@@ -1,4 +1,4 @@
-/// MI VEHÍCULO — app nativa de Android. Versión 1.1.0: la vista del cliente.
+/// MI VEHÍCULO — app nativa de Android. Versión 1.3.0: la vista del cliente.
 ///
 /// Cinco pestañas: Inicio, Diario, OBD, Mapa y Perfil. Todo lo que sabe
 /// hacer la web para el dueño del coche, más lo que la web no puede: hablar
@@ -19,6 +19,11 @@
 ///
 /// 3. La app se actualiza sola desde las releases de GitHub: comprueba con
 ///    calma (cada seis horas), avisa, y descarga e instala cuando se le dice.
+///
+/// 4. Lo que el taller hace con una cita (confirmar, rechazar, mandar el
+///    informe) llega como aviso en la bandeja. Sin push de pago: lo detecta
+///    la propia app al sincronizar, y una comprobación cada media hora con
+///    la app cerrada. Un aviso sale una vez, lo vea quien lo vea.
 library;
 
 import 'dart:async';
@@ -29,11 +34,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'datos/actualizacion.dart';
 import 'datos/almacen.dart';
+import 'datos/modelo.dart';
+import 'datos/notificador.dart';
 import 'datos/nube.dart';
 import 'estado.dart';
 import 'obd/lectura_fondo.dart';
 import 'pantalla_obd.dart';
 import 'pantallas/acceso.dart';
+import 'pantallas/citas.dart';
 import 'pantallas/diario.dart';
 import 'pantallas/inicio.dart';
 import 'pantallas/mapa.dart';
@@ -47,6 +55,8 @@ Future<void> main() async {
   // Registra con Android la función que ejecuta las lecturas en segundo
   // plano. Es solo el registro: no lee nada hasta que el dueño lo encienda.
   await prepararLecturaEnFondo();
+  // El canal de avisos y quién atiende cuando se toca uno.
+  await Notificador.preparar();
   runApp(MiVehiculoApp(almacen: almacen, nube: Nube(), actualizacion: Actualizacion()));
 }
 
@@ -68,13 +78,21 @@ class MiVehiculoApp extends StatefulWidget {
 class _MiVehiculoAppState extends State<MiVehiculoApp> with WidgetsBindingObserver {
   Timer? _calma;
   StreamSubscription<void>? _escucha;
+  StreamSubscription<NovedadCita>? _novedades;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    widget.nube.recuperarSesion().then((_) => widget.nube.sincronizar(widget.almacen));
+    widget.nube.recuperarSesion().then((_) {
+      widget.nube.sincronizar(widget.almacen);
+      // Con sesión, la comprobación de citas cada media hora queda programada
+      // (si ya lo estaba, no se duplica). Sin sesión no hay nada que mirar.
+      if (widget.nube.conSesion) programarComprobacionDeCitas();
+    });
     widget.actualizacion.comprobar();
+    // Cada novedad del taller que detecte la sincronización va a la bandeja.
+    _novedades = widget.nube.novedades.listen(Notificador.avisar);
     // Cada cambio del usuario dispara una subida, con calma: escribir una
     // nota de tres frases no son tres subidas.
     _escucha = widget.almacen.cambios.listen((_) {
@@ -99,6 +117,7 @@ class _MiVehiculoAppState extends State<MiVehiculoApp> with WidgetsBindingObserv
     WidgetsBinding.instance.removeObserver(this);
     _calma?.cancel();
     _escucha?.cancel();
+    _novedades?.cancel();
     super.dispose();
   }
 
@@ -142,6 +161,27 @@ class _ConchaState extends State<Concha> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _ofrecerCuentaLaPrimeraVez());
+    // Tocar un aviso del taller abre las citas: con la app viva (escucha) o
+    // si el aviso fue lo que la abrió (arranque).
+    Notificador.abrir.addListener(_alTocarAviso);
+    Notificador.destinoDeArranque().then((d) {
+      if (d != null) Notificador.abrir.value = d;
+    });
+  }
+
+  @override
+  void dispose() {
+    Notificador.abrir.removeListener(_alTocarAviso);
+    super.dispose();
+  }
+
+  void _alTocarAviso() {
+    final destino = Notificador.abrir.value;
+    if (destino == null || !mounted) return;
+    Notificador.abrir.value = null;
+    if (destino == 'citas') {
+      Navigator.push(context, MaterialPageRoute(builder: (_) => const PantallaCitas()));
+    }
   }
 
   /// La primera vez que se abre la app —sin coche y sin cuenta— se ofrece

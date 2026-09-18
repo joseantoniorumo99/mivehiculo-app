@@ -8,6 +8,7 @@ library;
 import 'package:flutter/material.dart';
 
 import '../datos/mantenimiento.dart';
+import '../datos/notificador.dart';
 import '../estado.dart';
 import '../tema.dart';
 import 'acceso.dart';
@@ -198,6 +199,8 @@ class PantallaPerfil extends StatelessWidget {
                     if (!ok) return;
                     await nube.salir();
                     await almacen.olvidarNube();
+                    // Sin sesión no hay citas que comprobar en segundo plano.
+                    await pararComprobacionDeCitas();
                   },
                   child: const Text('Cerrar sesión'),
                 ),

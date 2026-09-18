@@ -16,6 +16,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../datos/mantenimiento.dart';
 import '../datos/modelo.dart';
+import '../datos/notificador.dart';
 import '../estado.dart';
 import '../lugares/lugares.dart';
 import '../tema.dart';
@@ -113,6 +114,10 @@ class _PantallaPedirCitaState extends State<PantallaPedirCita> {
           ..remotoId = r.remotoId!;
         await almacen.guardarCita(cita);
         mensaje = 'Cita enviada al taller. Te avisaremos cuando conteste.';
+        // Es el momento en que pedir el permiso de avisos tiene sentido, y en
+        // que la comprobación periódica empieza a valer para algo.
+        await Notificador.pedirPermiso();
+        await programarComprobacionDeCitas();
       } else if (r.error != null) {
         mensaje = 'Anotada en tu móvil, pero no enviada: ${r.error}';
       }

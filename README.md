@@ -5,9 +5,10 @@ de lo que se le hace, los avisos de lo que toca, la lectura del motor por
 **OBD-II** con un lector ELM327 de Bluetooth clásico, los talleres cercanos y
 el expediente completo para enseñar cuando lo vendas.
 
-**Versión 1.2.0: la vista del dueño del coche.** El lado del taller vive en
+**Versión 1.3.0: la vista del dueño del coche.** El lado del taller vive en
 la versión web (PC): las citas que se piden desde el móvil le llegan allí a
-través de la cuenta.
+través de la cuenta, y lo que el taller conteste —confirmada, con su tiempo y
+forma de pago, o el informe de lo que hizo— vuelve al móvil como aviso.
 
 ## Qué hace
 
@@ -35,12 +36,21 @@ través de la cuenta.
 - **Mapa**: talleres, gasolineras, lavaderos, recambios y desguaces de
   OpenStreetMap, con distancia desde ti, horario y «abierto ahora», llamar y
   cómo llegar. Un aviso lleva directo a los talleres que hacen eso.
-- **Citas**: con cuenta se envían al taller por la función del servidor (la
-  misma que usa la web) y el estado que ponga el taller vuelve al móvil al
-  sincronizar; sin cuenta, o si el taller no usa la app, se anotan en el móvil
-  y la pantalla dice que hay que llamar.
-- **Expediente**: el historial entero con los años sin documentar a la vista,
-  para compartir como texto.
+- **Citas**: «Pedir cita» está a un toque desde el inicio, el diario y las
+  citas, y enseña primero los talleres que ya conoces; el mapa es para
+  encontrar otro. Con cuenta se envían al taller por la función del servidor
+  (la misma que usa la web); sin cuenta, o si el taller no usa la app, se
+  anotan en el móvil y la pantalla dice que hay que llamar.
+- **Avisos del taller**: cuando el taller confirma (con tiempo aproximado,
+  forma de pago, presupuesto y mensaje), rechaza con motivo o manda el
+  **informe** de lo que hizo, llega un aviso a la bandeja del móvil. Son
+  avisos locales, sin servicio de push: los pone la app al sincronizar y una
+  comprobación cada media hora con la app cerrada. El informe se añade al
+  diario con un botón, con su desglose línea a línea.
+- **Informe completo en PDF**: el historial del coche para quien lo compre
+  (datos, resumen, ITV y avisos, todas las intervenciones con desglose, las
+  lecturas del OBD, los informes de taller, y los años sin documentar a la
+  vista). Se genera en el móvil y se comparte desde él; también como texto.
 - **Cuenta (opcional)**: sin ella todo funciona y vive en el móvil. Con ella,
   se copia a la nube y sale en la web y en otros móviles.
 - **Se actualiza sola**: comprueba las releases de GitHub cada seis horas,
@@ -119,7 +129,7 @@ segundo no entra.
 
 ```bash
 flutter pub get
-flutter test        # 100 pruebas: protocolo, ITV, avisos, panel, matrícula, sitios, almacén
+flutter test        # 120 pruebas: protocolo, ITV, avisos, panel, matrícula, sitios, almacén, citas, PDF
 flutter run         # con el móvil conectado por USB
 ```
 
@@ -138,7 +148,9 @@ instalaría una versión encima de la anterior y habría que desinstalar.
 
 La cuenta usa un proyecto de Appwrite. Para montarlo hace falta una tabla
 `documentos` y un cubo `facturas` con seguridad por fila y por fichero, y
-registrar la app como plataforma Android (`es.regislab.mivehiculo`). Sin
+registrar la app como plataforma Android (`es.regislab.mivehiculo`). Las citas
+van por una tabla `citas` (con las columnas de texto `respuesta` e `informe`,
+JSON) y una función `citas` que las crea con el permiso del taller. Sin
 servidor la app funciona igual: lo dice en el perfil y se queda en local.
 
 ## Datos de terceros
