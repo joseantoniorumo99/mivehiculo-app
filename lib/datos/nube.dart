@@ -31,6 +31,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:appwrite/appwrite.dart';
+import 'package:appwrite/enums.dart' as enums;
 import 'package:appwrite/models.dart' as modelos;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -124,6 +125,16 @@ class Nube extends ChangeNotifier {
     // sin que nadie se lo pida, y "Jose@" no es "jose@" para todo el mundo.
     await _cuenta.createEmailPasswordSession(
         email: correo.trim().toLowerCase(), password: clave);
+    usuario = await _cuenta.get();
+    notifyListeners();
+  }
+
+  /// Entrar con Google. El SDK abre el navegador del sistema con la página de
+  /// Google, Appwrite crea la sesión y vuelve a la app por el esquema
+  /// `appwrite-callback-<proyecto>://` (declarado en el manifiesto). Es el
+  /// mismo proveedor que usa la web, así que la cuenta es la misma.
+  Future<void> entrarConGoogle() async {
+    await _cuenta.createOAuth2Session(provider: enums.OAuthProvider.google);
     usuario = await _cuenta.get();
     notifyListeners();
   }
@@ -459,7 +470,11 @@ class Nube extends ChangeNotifier {
     if (_fichas.containsKey(id)) return _fichas[id];
     try {
       final fila = await _tablas.getRow(databaseId: bd, tableId: tablaTalleres, rowId: id);
-      final f = FichaTaller.deFila(fila.data);
+      var f = FichaTaller.deFila({...fila.data, r'$id': id});
+      try {
+        final v = await _tablas.getRow(databaseId: bd, tableId: 'verificaciones', rowId: id);
+        f = f.conSello(v.data['verificado'] == true);
+      } catch (_) {}
       _fichas[id] = f;
       return f;
     } catch (_) {
@@ -484,7 +499,17 @@ class Nube extends ChangeNotifier {
         tableId: tablaTalleres,
         queries: [Query.limit(100)],
       );
-      final lista = pagina.rows.map((f) => FichaTaller.deFila({...f.data, r'$id': f.$id})).toList();
+      // Los sellos, de la tabla que solo escribe el servidor
+      final sellos = <String>{};
+      try {
+        final v = await _tablas.listRows(databaseId: bd, tableId: 'verificaciones', queries: [Query.limit(100)]);
+        for (final r in v.rows) {
+          if (r.data['verificado'] == true) sellos.add(r.$id);
+        }
+      } catch (_) {}
+      final lista = pagina.rows
+          .map((f) => FichaTaller.deFila({...f.data, r'$id': f.$id}).conSello(sellos.contains(f.$id)))
+          .toList();
       for (final f in lista) {
         _fichas[f.id] = f;
       }

@@ -5,7 +5,7 @@ de lo que se le hace, los avisos de lo que toca, la lectura del motor por
 **OBD-II** con un lector ELM327 de Bluetooth clásico, los talleres cercanos y
 el expediente completo para enseñar cuando lo vendas.
 
-**Versión 1.4.1: la vista del dueño del coche.** El lado del taller vive en
+**Versión 1.4.2: la vista del dueño del coche.** El lado del taller vive en
 la versión web (PC): las citas que se piden desde el móvil le llegan allí a
 través de la cuenta, y lo que el taller conteste —confirmada, con su tiempo y
 forma de pago, o el informe de lo que hizo— vuelve al móvil como aviso.
@@ -62,7 +62,7 @@ forma de pago, o el informe de lo que hizo— vuelve al móvil como aviso.
   (datos, resumen, ITV y avisos, todas las intervenciones con desglose, las
   lecturas del OBD, los informes de taller, y los años sin documentar a la
   vista). Se genera en el móvil y se comparte desde él; también como texto.
-- **Cuenta (opcional)**: sin ella todo funciona y vive en el móvil. Con ella,
+- **Cuenta (opcional)**, con correo o con Google: sin ella todo funciona y vive en el móvil. Con ella,
   se copia a la nube y sale en la web y en otros móviles.
 - **Se actualiza sola**: comprueba las releases de GitHub cada seis horas,
   avisa en el inicio, y descarga e instala desde el perfil.

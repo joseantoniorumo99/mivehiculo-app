@@ -104,6 +104,11 @@ class FichaTaller {
   final List<ServicioPublicado> servicios;
   final List<String> extras;
   final String actualizado; // ISO-8601 o vacío
+
+  /// El sello: lo dice la tabla `verificaciones`, que solo escribe el
+  /// servidor tras la llamada del administrador. Lo que ponga la fila del
+  /// taller no cuenta (la edita él).
+  final bool verificado;
   const FichaTaller({
     this.id = '',
     this.nombre = '',
@@ -116,9 +121,16 @@ class FichaTaller {
     this.servicios = const [],
     this.extras = const [],
     this.actualizado = '',
+    this.verificado = false,
   });
 
   bool get conPunto => lat != null && lon != null;
+
+  FichaTaller conSello(bool sello) => FichaTaller(
+        id: id, nombre: nombre, telefono: telefono, direccion: direccion, web: web,
+        lat: lat, lon: lon, horario: horario, servicios: servicios, extras: extras,
+        actualizado: actualizado, verificado: sello,
+      );
 
   /// El taller publicado como un sitio del mapa, para los que no están en
   /// OpenStreetMap (dados de alta a mano con su dirección). Su id es la
@@ -134,6 +146,7 @@ class FichaTaller {
         web: web,
         horario: horarioDeTramos(horario),
         servicios: servicios.map((s) => s.nombre).toList(),
+        verificado: verificado,
       );
 
   static FichaTaller deFila(Map<String, dynamic> d) {
@@ -218,6 +231,10 @@ class Lugar {
   final List<String> servicios;
   final bool esItv;
 
+  /// Null = no se sabe (un sitio de OpenStreetMap sin ficha publicada);
+  /// true/false = taller con ficha publicada, con o sin el sello.
+  final bool? verificado;
+
   const Lugar({
     required this.id,
     required this.tipo,
@@ -231,9 +248,17 @@ class Lugar {
     this.horarioTexto = '',
     this.servicios = const [],
     this.esItv = false,
+    this.verificado,
   });
 
   bool get esTaller => tipo == TipoLugar.taller;
+
+  /// El mismo sitio con el sello de verificación puesto (o negado).
+  Lugar conVerificado(bool sello) => Lugar(
+        id: id, tipo: tipo, nombre: nombre, lat: lat, lon: lon, direccion: direccion,
+        telefono: telefono, web: web, horario: horario, horarioTexto: horarioTexto,
+        servicios: servicios, esItv: esItv, verificado: sello,
+      );
 
   /// El mismo sitio con otros servicios: los que publicó el taller mandan
   /// sobre los de OpenStreetMap al pedir cita.

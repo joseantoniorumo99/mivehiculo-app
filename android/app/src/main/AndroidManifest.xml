@@ -49,6 +49,21 @@
             </intent-filter>
         </activity>
 
+        <!-- La vuelta del acceso con Google: Appwrite abre el navegador del
+             sistema y regresa a la app por este esquema (appwrite-callback-
+             más el id del proyecto). Sin esto la pestaña de Google se queda
+             abierta y la app nunca se entera de que ya hay sesión. -->
+        <activity
+            android:name="com.linusu.flutter_web_auth_2.CallbackActivity"
+            android:exported="true">
+            <intent-filter android:label="flutter_web_auth_2">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="appwrite-callback-6a9a7983002332de60a5"/>
+            </intent-filter>
+        </activity>
+
         <!-- Cuando el móvil se conecta por Bluetooth al COCHE (el manos
              libres o la radio), Android despierta este receptor aunque la app
              esté cerrada: es de los pocos avisos que el sistema sigue

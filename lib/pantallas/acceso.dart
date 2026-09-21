@@ -66,6 +66,29 @@ class _PantallaAccesoState extends State<PantallaAcceso> {
     }
   }
 
+  /// Con Google no hay contraseña que teclear ni correo que verificar: Google
+  /// ya lo verificó. Es la puerta que más gente usa en el móvil.
+  Future<void> _conGoogle() async {
+    setState(() {
+      _enviando = true;
+      _error = null;
+    });
+    final nube = context.nube;
+    final almacen = context.almacen;
+    try {
+      await nube.entrarConGoogle();
+      // ignore: unawaited_futures
+      nube.sincronizar(almacen);
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      // Cerrar el navegador sin terminar no es un error que haya que explicar
+      final texto = Nube.explicar(e);
+      setState(() => _error = texto.toLowerCase().contains('cancel') ? null : texto);
+    } finally {
+      if (mounted) setState(() => _enviando = false);
+    }
+  }
+
   Future<void> _claveNueva() async {
     if (_correo.text.trim().isEmpty) {
       setState(() => _error = 'Escribe tu correo arriba y vuelve a pulsar.');
@@ -158,6 +181,12 @@ class _PantallaAccesoState extends State<PantallaAcceso> {
               FilledButton(
                 onPressed: _enviando ? null : _enviar,
                 child: Text(_enviando ? 'Un momento…' : (_creando ? 'Crear la cuenta' : 'Entrar')),
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: _enviando ? null : _conGoogle,
+                icon: const Icon(Icons.g_mobiledata, size: 28),
+                label: const Text('Continuar con Google'),
               ),
               if (!_creando)
                 TextButton(onPressed: _claveNueva, child: const Text('He olvidado la contraseña')),

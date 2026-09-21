@@ -120,6 +120,12 @@ class _PantallaMapaState extends State<PantallaMapa> {
     // de alta a mano) también salen: son los que de verdad reciben citas.
     final publicados = await context.nube.talleresPublicados();
     if (!mounted) return;
+    final porEtiqueta = {for (final f in publicados) f.id: f};
+    // Los de OpenStreetMap con ficha publicada llevan su sello (o su falta)
+    final conSello = r.lista.map((l) {
+      final f = porEtiqueta[etiquetaDeTaller(l.id)];
+      return f == null ? l : l.conVerificado(f.verificado);
+    }).toList();
     final vistos = r.lista.map((l) => etiquetaDeTaller(l.id)).toSet();
     final extra = publicados
         .where((f) => f.conPunto && !vistos.contains(f.id))
@@ -127,7 +133,7 @@ class _PantallaMapaState extends State<PantallaMapa> {
         .map((f) => f.comoLugar())
         .toList();
     setState(() {
-      _lugares = [...r.lista, ...extra];
+      _lugares = [...conSello, ...extra];
       _fallo = r.error;
       _cargando = false;
     });
@@ -383,6 +389,14 @@ class _PantallaMapaState extends State<PantallaMapa> {
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
                           color: estado.startsWith('Abierto') ? Tono.tealTinta : Tono.naranjaTinta)),
+                if (l.verificado != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: ChipEstado(
+                      l.verificado! ? 'Taller verificado' : 'Taller sin verificar',
+                      tono: l.verificado! ? TonoEstado.calma : TonoEstado.neutro,
+                    ),
+                  ),
               ],
             ),
           ),

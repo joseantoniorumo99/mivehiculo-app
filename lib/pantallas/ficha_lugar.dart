@@ -10,7 +10,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../datos/mantenimiento.dart' show enEuros, fechaCorta;
+import '../datos/mantenimiento.dart' show enEuros;
 import '../estado.dart';
 import '../lugares/lugares.dart';
 import '../tema.dart';
@@ -184,10 +184,17 @@ class _PantallaFichaLugarState extends State<PantallaFichaLugar> {
     final buscado = servicio?.toLowerCase();
     return [
       TituloSeccion('Lo que publica el taller',
-          accion: f.actualizado.length >= 10
-              ? Text(fechaCorta(f.actualizado.substring(0, 10)),
-                  style: const TextStyle(fontSize: 12, color: Tono.tintaSuave))
-              : null),
+          accion: ChipEstado(f.verificado ? 'Verificado' : 'Sin verificar',
+              tono: f.verificado ? TonoEstado.calma : TonoEstado.neutro)),
+      if (!f.verificado)
+        const Padding(
+          padding: EdgeInsets.only(bottom: 8),
+          child: Text(
+            'Ficha publicada por el taller, todavía sin comprobar por nosotros. '
+            'El sello «Verificado» llega tras llamarle y cotejar su placa de taller.',
+            style: TextStyle(fontSize: 12, color: Tono.tintaSuave, height: 1.4),
+          ),
+        ),
       if (f.servicios.isNotEmpty)
         Tarjeta(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
