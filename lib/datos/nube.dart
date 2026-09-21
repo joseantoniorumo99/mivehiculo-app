@@ -65,6 +65,8 @@ class Nube extends ChangeNotifier {
   /// tiempo, extras). Pública: se lee sin sesión.
   static const tablaTalleres = 'talleres';
   final Map<String, FichaTaller?> _fichas = {};
+  List<FichaTaller>? _publicados;
+  DateTime? _publicadosCuando;
 
   modelos.User? usuario;
 
@@ -463,6 +465,34 @@ class Nube extends ChangeNotifier {
     } catch (_) {
       _fichas[id] = null;
       return null;
+    }
+  }
+
+  /// Todos los talleres con ficha publicada, para pintar en el mapa los que
+  /// no están en OpenStreetMap. Hoy son pocos: se bajan de una vez (100) y se
+  /// recuerdan diez minutos. Sin tabla o sin red, ninguno.
+  Future<List<FichaTaller>> talleresPublicados() async {
+    final ahora = DateTime.now();
+    if (_publicados != null &&
+        _publicadosCuando != null &&
+        ahora.difference(_publicadosCuando!).inMinutes < 10) {
+      return _publicados!;
+    }
+    try {
+      final pagina = await _tablas.listRows(
+        databaseId: bd,
+        tableId: tablaTalleres,
+        queries: [Query.limit(100)],
+      );
+      final lista = pagina.rows.map((f) => FichaTaller.deFila({...f.data, r'$id': f.$id})).toList();
+      for (final f in lista) {
+        _fichas[f.id] = f;
+      }
+      _publicados = lista;
+      _publicadosCuando = ahora;
+      return lista;
+    } catch (_) {
+      return _publicados ?? const [];
     }
   }
 

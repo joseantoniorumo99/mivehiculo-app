@@ -17,6 +17,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../estado.dart';
 import '../lugares/lugares.dart';
 import '../tema.dart';
 import 'ficha_lugar.dart';
@@ -115,8 +116,18 @@ class _PantallaMapaState extends State<PantallaMapa> {
     });
     final r = await buscarLugares(centro.latitude, centro.longitude, radio: 6000);
     if (!mounted) return;
+    // Los talleres con ficha publicada que no están en OpenStreetMap (dados
+    // de alta a mano) también salen: son los que de verdad reciben citas.
+    final publicados = await context.nube.talleresPublicados();
+    if (!mounted) return;
+    final vistos = r.lista.map((l) => etiquetaDeTaller(l.id)).toSet();
+    final extra = publicados
+        .where((f) => f.conPunto && !vistos.contains(f.id))
+        .where((f) => distanciaKm(centro.latitude, centro.longitude, f.lat!, f.lon!) <= 30)
+        .map((f) => f.comoLugar())
+        .toList();
     setState(() {
-      _lugares = r.lista;
+      _lugares = [...r.lista, ...extra];
       _fallo = r.error;
       _cargando = false;
     });

@@ -88,20 +88,53 @@ class ServicioPublicado {
 /// La ficha que el taller publicó desde su panel. Es lo que manda sobre lo
 /// que diga OpenStreetMap: lo escribió él.
 class FichaTaller {
+  /// El id de la fila, que es la etiqueta del taller ("osmnode123",
+  /// "propio1789…"). Es lo que se manda como tallerId al pedir cita.
+  final String id;
   final String nombre;
   final String telefono;
   final String direccion;
+  final String web;
+  final double? lat;
+  final double? lon;
+
+  /// Siete tramos de texto, lunes a domingo, como los guarda la web
+  /// ("09:00-14:00,16:00-19:00"; vacío = cerrado).
+  final List<String> horario;
   final List<ServicioPublicado> servicios;
   final List<String> extras;
   final String actualizado; // ISO-8601 o vacío
   const FichaTaller({
+    this.id = '',
     this.nombre = '',
     this.telefono = '',
     this.direccion = '',
+    this.web = '',
+    this.lat,
+    this.lon,
+    this.horario = const [],
     this.servicios = const [],
     this.extras = const [],
     this.actualizado = '',
   });
+
+  bool get conPunto => lat != null && lon != null;
+
+  /// El taller publicado como un sitio del mapa, para los que no están en
+  /// OpenStreetMap (dados de alta a mano con su dirección). Su id es la
+  /// etiqueta, así que la cita que se pida le llega igual.
+  Lugar comoLugar() => Lugar(
+        id: id,
+        tipo: TipoLugar.taller,
+        nombre: nombre.isEmpty ? 'Taller' : nombre,
+        lat: lat ?? 0,
+        lon: lon ?? 0,
+        direccion: direccion,
+        telefono: telefono,
+        web: web,
+        horario: horarioDeTramos(horario),
+        servicios: servicios.map((s) => s.nombre).toList(),
+      );
 
   static FichaTaller deFila(Map<String, dynamic> d) {
     List<dynamic> lista(Object? v) {
@@ -115,10 +148,16 @@ class FichaTaller {
       return const [];
     }
 
+    double? numero(Object? v) => v == null ? null : double.tryParse(v.toString());
     return FichaTaller(
+      id: (d[r'$id'] ?? '').toString(),
       nombre: (d['nombre'] ?? '').toString(),
       telefono: (d['telefono'] ?? '').toString(),
       direccion: (d['direccion'] ?? '').toString(),
+      web: (d['web'] ?? '').toString(),
+      lat: numero(d['lat']),
+      lon: numero(d['lon']),
+      horario: lista(d['horario']).map((e) => e.toString()).toList(),
       servicios: lista(d['servicios'])
           .whereType<Map>()
           .map((s) => ServicioPublicado(
@@ -132,6 +171,32 @@ class FichaTaller {
       actualizado: (d['actualizado'] ?? '').toString(),
     );
   }
+}
+
+/// De los siete tramos de texto de la web ("09:00-14:00,16:00-19:00") al
+/// horario del mapa (minutos desde medianoche por día). Null si no hay nada.
+List<List<List<int>>>? horarioDeTramos(List<String> dias) {
+  if (dias.length != 7) return null;
+  int? minutos(String h) {
+    final m = RegExp(r'^(\d{1,2}):(\d{2})$').firstMatch(h.trim());
+    if (m == null) return null;
+    return int.parse(m.group(1)!) * 60 + int.parse(m.group(2)!);
+  }
+
+  var alguno = false;
+  final salida = dias.map((dia) {
+    final tramos = <List<int>>[];
+    for (final t in dia.split(',')) {
+      final partes = t.split('-');
+      if (partes.length != 2) continue;
+      final a = minutos(partes[0]), b = minutos(partes[1]);
+      if (a == null || b == null || b <= a) continue;
+      tramos.add([a, b]);
+      alguno = true;
+    }
+    return tramos;
+  }).toList();
+  return alguno ? salida : null;
 }
 
 class Lugar {
