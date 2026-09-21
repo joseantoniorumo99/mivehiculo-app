@@ -537,10 +537,15 @@ class NovedadCita {
   String get titulo => switch (suceso) {
         'confirmada' => '$_taller ha confirmado tu cita',
         'rechazada' => '$_taller no puede atenderte ese día',
+        'cambiada' => '$_taller ha cambiado la fecha de tu cita',
         _ => '$_taller te ha mandado el informe',
       };
 
   String get cuerpo {
+    if (suceso == 'cambiada') {
+      return 'Ahora es el ${cita.fecha}${cita.hora.isNotEmpty ? ' a las ${cita.hora}' : ''}.'
+          '${cita.mensaje.isNotEmpty ? ' «${cita.mensaje}»' : ''}';
+    }
     if (suceso == 'informe') {
       final t = cita.informeTitulo.isNotEmpty ? cita.informeTitulo : cita.servicio;
       final total = cita.informeTotal;

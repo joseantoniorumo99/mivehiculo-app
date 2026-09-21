@@ -438,7 +438,14 @@ class Nube extends ChangeNotifier {
         if (local.fecha.compareTo(limite) < 0) local.avisado = local.suceso;
         await almacen.guardarCita(local);
       } else {
-        final cambia = local.estado != estado ||
+        // El taller puede mover la cita desde su agenda: fecha y hora nuevas
+        final fechaRemota = (d['fecha'] ?? local.fecha).toString();
+        final horaRemota = (d['hora'] ?? local.hora).toString();
+        final movida = local.enviada &&
+            (fechaRemota != local.fecha || horaRemota != local.hora) &&
+            fechaRemota.isNotEmpty;
+        final cambia = movida ||
+            local.estado != estado ||
             !local.enviada ||
             jsonEncode(local.respuesta) != jsonEncode(respuesta) ||
             jsonEncode(local.informe) != jsonEncode(informe);
@@ -446,9 +453,15 @@ class Nube extends ChangeNotifier {
           local
             ..estado = estado
             ..enviada = true
+            ..fecha = fechaRemota
+            ..hora = horaRemota
             ..respuesta = respuesta
             ..informe = informe;
           await almacen.guardarCita(local);
+        }
+        // Un cambio de fecha se avisa siempre: es lo que más importa saber
+        if (movida && estado != EstadoCita.cancelada && estado != EstadoCita.rechazada) {
+          novedades.add(NovedadCita(local, 'cambiada'));
         }
       }
       final suceso = local.suceso;
