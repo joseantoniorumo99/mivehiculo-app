@@ -5,7 +5,7 @@ de lo que se le hace, los avisos de lo que toca, la lectura del motor por
 **OBD-II** con un lector ELM327 de Bluetooth clásico, los talleres cercanos y
 el expediente completo para enseñar cuando lo vendas.
 
-**Versión 1.4.2: la vista del dueño del coche.** El lado del taller vive en
+**Versión 1.5.0: la vista del dueño del coche.** El lado del taller vive en
 la versión web (PC): las citas que se piden desde el móvil le llegan allí a
 través de la cuenta, y lo que el taller conteste —confirmada, con su tiempo y
 forma de pago, o el informe de lo que hizo— vuelve al móvil como aviso.
@@ -58,6 +58,12 @@ forma de pago, o el informe de lo que hizo— vuelve al móvil como aviso.
   tiempo aproximado y precio de partida, y lo que ofrece además, tal y como él
   lo rellenó en su panel. Sus fotos de las piezas llegan con el informe y pasan
   al diario con la intervención.
+- **Credibilidad y coche verificado**: cada anotación dice si la hizo el taller,
+  si el dueño la anotó con factura o fotos, o sin pruebas. Y el coche queda
+  «verificado» cuando el bastidor de la ficha técnica coincide con el que lee
+  el OBD dentro del coche: posesión y documento, sin guardar papeles.
+- **Ofertas de talleres**: apartado propio con lo que publican los talleres
+  cerca, por cercanía. Es la única publicidad de la app y vive aparte.
 - **Informe completo en PDF**: el historial del coche para quien lo compre
   (datos, resumen, ITV y avisos, todas las intervenciones con desglose, las
   lecturas del OBD, los informes de taller, y los años sin documentar a la
@@ -140,7 +146,7 @@ segundo no entra.
 
 ```bash
 flutter pub get
-flutter test        # 137 pruebas: protocolo, ITV, avisos, panel, matrícula, sitios, almacén, citas, PDF, ficha técnica, consejos
+flutter test        # 144 pruebas: protocolo, ITV, avisos, panel, matrícula, sitios, almacén, citas, PDF, ficha técnica, consejos
 flutter run         # con el móvil conectado por USB
 ```
 

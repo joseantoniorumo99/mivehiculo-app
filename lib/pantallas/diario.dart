@@ -169,6 +169,17 @@ class PantallaDiario extends StatelessWidget {
                         if (d.lineas.length > 1)
                           Text('${d.lineas.length} conceptos',
                               style: const TextStyle(fontSize: 12, color: Tono.tintaSuave)),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: ChipEstado(
+                            nombreCredibilidad[d.credibilidad]!,
+                            tono: switch (d.credibilidad) {
+                              Credibilidad.taller => TonoEstado.calma,
+                              Credibilidad.conPrueba => TonoEstado.accion,
+                              Credibilidad.sinPrueba => TonoEstado.neutro,
+                            },
+                          ),
+                        ),
                       ],
                     ),
                   ),

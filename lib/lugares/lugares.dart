@@ -85,6 +85,18 @@ class ServicioPublicado {
   const ServicioPublicado(this.nombre, this.precio, this.tiempo);
 }
 
+/// Una oferta publicada por el taller desde su panel.
+class Oferta {
+  final String titulo;
+  final String detalle;
+  final double? precio;
+  final String hasta; // AAAA-MM-DD o vacío
+  final String servicio;
+  const Oferta({this.titulo = '', this.detalle = '', this.precio, this.hasta = '', this.servicio = ''});
+
+  bool vigente(String hoy) => hasta.isEmpty || hasta.compareTo(hoy) >= 0;
+}
+
 /// La ficha que el taller publicó desde su panel. Es lo que manda sobre lo
 /// que diga OpenStreetMap: lo escribió él.
 class FichaTaller {
@@ -103,6 +115,7 @@ class FichaTaller {
   final List<String> horario;
   final List<ServicioPublicado> servicios;
   final List<String> extras;
+  final List<Oferta> ofertas;
   final String actualizado; // ISO-8601 o vacío
 
   /// El sello: lo dice la tabla `verificaciones`, que solo escribe el
@@ -120,16 +133,24 @@ class FichaTaller {
     this.horario = const [],
     this.servicios = const [],
     this.extras = const [],
+    this.ofertas = const [],
     this.actualizado = '',
     this.verificado = false,
   });
 
   bool get conPunto => lat != null && lon != null;
 
+  /// Las ofertas que no han caducado.
+  List<Oferta> get ofertasVigentes {
+    final h = DateTime.now();
+    final hoy = '${h.year}-${h.month.toString().padLeft(2, '0')}-${h.day.toString().padLeft(2, '0')}';
+    return ofertas.where((o) => o.titulo.isNotEmpty && o.vigente(hoy)).toList();
+  }
+
   FichaTaller conSello(bool sello) => FichaTaller(
         id: id, nombre: nombre, telefono: telefono, direccion: direccion, web: web,
         lat: lat, lon: lon, horario: horario, servicios: servicios, extras: extras,
-        actualizado: actualizado, verificado: sello,
+        ofertas: ofertas, actualizado: actualizado, verificado: sello,
       );
 
   /// El taller publicado como un sitio del mapa, para los que no están en
@@ -181,6 +202,16 @@ class FichaTaller {
           .where((s) => s.nombre.isNotEmpty)
           .toList(),
       extras: lista(d['extras']).map((e) => e.toString()).where((e) => e.isNotEmpty).toList(),
+      ofertas: lista(d['ofertas'])
+          .whereType<Map>()
+          .map((o) => Oferta(
+                titulo: (o['titulo'] ?? '').toString(),
+                detalle: (o['detalle'] ?? '').toString(),
+                precio: o['precio'] == null ? null : double.tryParse(o['precio'].toString()),
+                hasta: (o['hasta'] ?? '').toString(),
+                servicio: (o['servicio'] ?? '').toString(),
+              ))
+          .toList(),
       actualizado: (d['actualizado'] ?? '').toString(),
     );
   }

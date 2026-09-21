@@ -232,6 +232,36 @@ class _PantallaFichaLugarState extends State<PantallaFichaLugar> {
             }).toList(),
           ),
         ),
+      if (f.ofertasVigentes.isNotEmpty) ...[
+        const Padding(
+          padding: EdgeInsets.only(bottom: 8),
+          child: Text('Ofertas', style: TextStyle(fontWeight: FontWeight.w700)),
+        ),
+        ...f.ofertasVigentes.map((o) => Tarjeta(
+              color: Tono.azulFilm,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(o.titulo, style: const TextStyle(fontWeight: FontWeight.w700)),
+                        if (o.detalle.isNotEmpty)
+                          Text(o.detalle, style: const TextStyle(fontSize: 12, height: 1.4)),
+                        if (o.hasta.isNotEmpty)
+                          Text('Hasta el ${_fechaCorta(o.hasta)}',
+                              style: const TextStyle(fontSize: 12, color: Tono.tintaSuave)),
+                      ],
+                    ),
+                  ),
+                  if (o.precio != null)
+                    Text(enEuros(o.precio),
+                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                ],
+              ),
+            )),
+      ],
       if (f.extras.isNotEmpty) ...[
         const Padding(
           padding: EdgeInsets.only(bottom: 8),
@@ -249,6 +279,14 @@ class _PantallaFichaLugarState extends State<PantallaFichaLugar> {
         style: TextStyle(fontSize: 12, color: Tono.tintaSuave),
       ),
     ];
+  }
+
+  static String _fechaCorta(String iso) {
+    final p = iso.split('-');
+    if (p.length < 3) return iso;
+    const meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sept', 'oct', 'nov', 'dic'];
+    final m = int.tryParse(p[1]) ?? 1;
+    return '${int.tryParse(p[2]) ?? p[2]} ${meses[(m - 1).clamp(0, 11)] } ${p[0]}';
   }
 
   List<Widget> _diasHorario(List<List<List<int>>> h) {

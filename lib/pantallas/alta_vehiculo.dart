@@ -134,6 +134,10 @@ class _PantallaAltaVehiculoState extends State<PantallaAltaVehiculo> {
   bool _leyendoFicha = false;
   String? _notaFicha;
 
+  /// «Más tarde»: la tarjeta de la ficha técnica se recoge y el formulario
+  /// sigue a mano. Se puede volver a ella desde el inicio cuando quiera.
+  bool _fichaMasTarde = false;
+
   /// La foto de la ficha técnica: ML Kit saca el texto, `leerFichaTecnica`
   /// lo interpreta, y aquí se RELLENAN LOS HUECOS. Lo que el dueño ya
   /// escribió no se toca: propone, no decide.
@@ -378,7 +382,10 @@ class _PantallaAltaVehiculoState extends State<PantallaAltaVehiculo> {
       ..matriculacion = _matriculacion.text.trim()
       ..combustible = _combustible
       ..adBlue = _adBlue;
-    if (_bastidorLeido.isNotEmpty && v.bastidor.isEmpty) v.bastidor = _bastidorLeido;
+    if (_bastidorLeido.isNotEmpty) {
+      v.bastidorFicha = _bastidorLeido;
+      if (v.bastidor.isEmpty) v.bastidor = _bastidorLeido;
+    }
 
     if (_esEdicion) {
       final repetida = almacen.vehiculoConMatricula(v.matricula, excepto: v.id);
@@ -415,7 +422,7 @@ class _PantallaAltaVehiculoState extends State<PantallaAltaVehiculo> {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
             children: [
-              if (!_esEdicion || _bastidorLeido.isEmpty) ...[
+              if (!_fichaMasTarde && (!_esEdicion || _bastidorLeido.isEmpty)) ...[
                 Tarjeta(
                   color: Tono.azulFilm,
                   child: Column(
@@ -426,7 +433,7 @@ class _PantallaAltaVehiculoState extends State<PantallaAltaVehiculo> {
                           const Icon(Icons.badge_outlined, color: Tono.azulTinta),
                           const SizedBox(width: 8),
                           const Expanded(
-                            child: Text('¿Tienes la ficha técnica a mano?',
+                            child: Text('¿Saber más de tu coche ahora, o más tarde?',
                                 style: TextStyle(fontWeight: FontWeight.w700, color: Tono.azulTinta)),
                           ),
                           TextButton(
@@ -436,8 +443,9 @@ class _PantallaAltaVehiculoState extends State<PantallaAltaVehiculo> {
                         ],
                       ),
                       const Text(
-                        'Hazle una foto y se rellenan solos la marca, el modelo, la fecha, '
-                        'el combustible, el motor y el bastidor. Tú revisas y guardas.',
+                        'Con una foto de la ficha técnica se rellenan solos la marca, el modelo, '
+                        'la fecha, el combustible, el motor y el bastidor, y el coche queda a un '
+                        'paso de «verificado». Tú revisas y guardas.',
                         style: TextStyle(height: 1.4),
                       ),
                       const SizedBox(height: 10),
@@ -467,6 +475,14 @@ class _PantallaAltaVehiculoState extends State<PantallaAltaVehiculo> {
                           padding: const EdgeInsets.only(top: 8),
                           child: Text(_notaFicha!,
                               style: const TextStyle(fontSize: 12, color: Tono.tinta, height: 1.4)),
+                        ),
+                      if (_bastidorLeido.isEmpty)
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton(
+                            onPressed: () => setState(() => _fichaMasTarde = true),
+                            child: const Text('Más tarde, lo relleno a mano'),
+                          ),
                         ),
                     ],
                   ),

@@ -85,6 +85,13 @@ class PantallaExpediente extends StatelessWidget {
                       if (coche.combustible.isNotEmpty) FilaDato('Combustible', coche.combustible),
                       if (coche.km != null) FilaDato('Kilómetros', '${conMiles(coche.km!)} km'),
                       if (coche.bastidor.isNotEmpty) FilaDato('Bastidor', coche.bastidor, monoespaciada: true),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: ChipEstado(
+                          coche.verificado ? 'Coche verificado: bastidor por OBD y ficha técnica' : 'Coche sin verificar',
+                          tono: coche.verificado ? TonoEstado.calma : TonoEstado.neutro,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -94,7 +101,7 @@ class PantallaExpediente extends StatelessWidget {
                     const SizedBox(width: 10),
                     Expanded(child: _cifra('Intervenciones', '${diario.length}')),
                     const SizedBox(width: 10),
-                    Expanded(child: _cifra('Lecturas OBD', '${lecturas.length}')),
+                    Expanded(child: _cifra('Con prueba', '${diario.where((d) => d.conPrueba).length} de ${diario.length}')),
                   ],
                 ),
                 if (huecos.isNotEmpty) ...[
@@ -159,7 +166,7 @@ class PantallaExpediente extends StatelessWidget {
                                       fechaCorta(d.fecha),
                                       if (d.km != null) '${conMiles(d.km!)} km',
                                       if (d.taller.isNotEmpty) d.taller,
-                                      if (d.factura.isNotEmpty) 'con factura',
+                                      nombreCredibilidad[d.credibilidad]!.toLowerCase(),
                                     ].join(' · '),
                                     style: const TextStyle(fontSize: 12, color: Tono.tintaSuave),
                                   ),

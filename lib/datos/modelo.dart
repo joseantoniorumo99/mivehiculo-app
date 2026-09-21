@@ -64,6 +64,13 @@ class Vehiculo {
   /// historial a ESTE coche y no a otro del mismo modelo.
   String bastidor;
 
+  /// De dónde ha salido cada bastidor. El de la FICHA TÉCNICA es el documento;
+  /// el del OBD es la posesión (para leerlo hay que estar dentro del coche con
+  /// la llave). Cuando los dos coinciden, el coche está VERIFICADO: sin
+  /// guardar ningún papel, y sin que se pueda fingir desde el sofá.
+  String bastidorFicha;
+  String bastidorObd;
+
   Vehiculo({
     String? id,
     this.marca = '',
@@ -75,7 +82,21 @@ class Vehiculo {
     this.km,
     this.adBlue = 'auto',
     this.bastidor = '',
+    this.bastidorFicha = '',
+    this.bastidorObd = '',
   }) : id = id ?? nuevoId('v');
+
+  /// Verificado: el bastidor del documento y el del coche son el mismo.
+  bool get verificado =>
+      bastidorFicha.isNotEmpty && bastidorFicha == bastidorObd;
+
+  /// Los dos bastidores existen pero no cuadran: o la foto se leyó mal, o el
+  /// documento no es de este coche. Se dice, no se esconde.
+  bool get bastidoresDiscrepan =>
+      bastidorFicha.isNotEmpty && bastidorObd.isNotEmpty && bastidorFicha != bastidorObd;
+
+  /// Pasos dados hacia la verificación (0, 1 o 2).
+  int get pasosVerificacion => (bastidorFicha.isNotEmpty ? 1 : 0) + (bastidorObd.isNotEmpty ? 1 : 0);
 
   String get nombre {
     final n = '$marca $modelo'.trim();
@@ -103,6 +124,8 @@ class Vehiculo {
         'km': km,
         'adBlue': adBlue,
         'bastidor': bastidor,
+        'bastidorFicha': bastidorFicha,
+        'bastidorObd': bastidorObd,
       };
 
   static Vehiculo deJson(Map<String, dynamic> j) => Vehiculo(
@@ -116,6 +139,8 @@ class Vehiculo {
         km: _entero(j['km']),
         adBlue: (j['adBlue'] ?? 'auto') as String,
         bastidor: (j['bastidor'] ?? '') as String,
+        bastidorFicha: (j['bastidorFicha'] ?? '') as String,
+        bastidorObd: (j['bastidorObd'] ?? '') as String,
       );
 }
 
@@ -177,6 +202,11 @@ class Intervencion {
   /// informe, o las que haga el dueño. Nombres de fichero, como la factura.
   List<String> fotos;
 
+  /// Quién lo escribió: 'taller' si viene del informe que mandó el taller
+  /// desde su panel, 'propia' si lo anotó el dueño. No se puede cambiar a
+  /// mano: es lo que hace creíble el historial.
+  String origen;
+
   Intervencion({
     String? id,
     required this.vehiculoId,
@@ -190,9 +220,20 @@ class Intervencion {
     List<Linea>? lineas,
     this.factura = '',
     List<String>? fotos,
+    this.origen = 'propia',
   })  : id = id ?? nuevoId('i'),
         lineas = lineas ?? [],
         fotos = fotos ?? [];
+
+  /// Cuánto se puede creer esta anotación, en tres niveles. Es lo que el
+  /// comprador del coche quiere saber de cada línea del historial.
+  Credibilidad get credibilidad {
+    if (origen == 'taller') return Credibilidad.taller;
+    if (factura.isNotEmpty || fotos.isNotEmpty) return Credibilidad.conPrueba;
+    return Credibilidad.sinPrueba;
+  }
+
+  bool get conPrueba => credibilidad != Credibilidad.sinPrueba;
 
   /// Todos los ficheros de imagen de esta anotación: la factura y las fotos.
   List<String> get ficheros => [if (factura.isNotEmpty) factura, ...fotos];
@@ -227,6 +268,7 @@ class Intervencion {
         'lineas': lineas.map((l) => l.aJson()).toList(),
         'factura': factura,
         'fotos': fotos,
+        'origen': origen,
       };
 
   static Intervencion deJson(Map<String, dynamic> j) => Intervencion(
@@ -244,8 +286,18 @@ class Intervencion {
             .toList(),
         factura: (j['factura'] ?? '') as String,
         fotos: ((j['fotos'] ?? []) as List).map((f) => f.toString()).where((f) => f.isNotEmpty).toList(),
+        origen: (j['origen'] ?? 'propia') as String,
       );
 }
+
+/// Los tres niveles de credibilidad de una anotación del diario.
+enum Credibilidad { taller, conPrueba, sinPrueba }
+
+const Map<Credibilidad, String> nombreCredibilidad = {
+  Credibilidad.taller: 'Hecho por el taller',
+  Credibilidad.conPrueba: 'Con factura o fotos',
+  Credibilidad.sinPrueba: 'Sin pruebas',
+};
 
 enum EstadoCita { solicitada, confirmada, rechazada, cancelada, hecha }
 
@@ -412,6 +464,7 @@ class Cita {
       coste: informeTotal,
       lineas: lineas,
       fotos: fotos,
+      origen: 'taller',
     );
   }
 

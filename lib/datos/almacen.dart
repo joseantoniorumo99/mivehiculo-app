@@ -278,10 +278,14 @@ class Almacen extends ChangeNotifier {
     await _guardar();
   }
 
+  /// El bastidor que lee el OBD. Vale como prueba de posesión: para leerlo
+  /// hay que estar dentro del coche con el contacto dado.
   Future<void> ponerBastidor(String vin) async {
     final c = coche;
-    if (c == null || vin.isEmpty || c.bastidor == vin) return;
-    c.bastidor = vin;
+    if (c == null || vin.isEmpty) return;
+    if (c.bastidorObd == vin && c.bastidor.isNotEmpty) return;
+    c.bastidorObd = vin;
+    if (c.bastidor.isEmpty) c.bastidor = vin;
     _marcar(c.id);
     await _guardar();
   }

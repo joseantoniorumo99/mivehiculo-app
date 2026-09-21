@@ -178,6 +178,11 @@ class InformePdf {
         if (coche.combustible.isNotEmpty) _fila('Combustible', coche.combustible),
         _fila('Kilómetros actuales', coche.km != null ? '${conMiles(coche.km!)} km' : 'no consta'),
         _fila('Bastidor (VIN)', coche.bastidor.isNotEmpty ? coche.bastidor : 'no leído'),
+        _fila(
+            'Coche verificado',
+            coche.verificado
+                ? 'Sí: el bastidor leído por OBD dentro del coche coincide con el de la ficha técnica'
+                : 'No (falta ${coche.bastidorFicha.isEmpty ? 'la ficha técnica' : ''}${coche.bastidorFicha.isEmpty && coche.bastidorObd.isEmpty ? ' y ' : ''}${coche.bastidorObd.isEmpty ? 'la lectura OBD' : ''})'),
         if (coche.adBlue != 'auto') _fila('AdBlue', coche.adBlue == 'si' ? 'sí' : (coche.adBlue == 'no' ? 'no' : 'sin confirmar')),
 
         // ---- 2. Resumen ----
@@ -197,6 +202,13 @@ class InformePdf {
                   : '${cronologico.first.fecha.substring(0, 4)} – ${cronologico.last.fecha.substring(0, 4)}',
               ultima: true),
         ]),
+        pw.SizedBox(height: 8),
+        pw.Text(
+          '${diario.where((d) => d.credibilidad == Credibilidad.taller).length} intervenciones anotadas por el propio taller, '
+          '${diario.where((d) => d.credibilidad == Credibilidad.conPrueba).length} por el titular con factura o fotos y '
+          '${diario.where((d) => d.credibilidad == Credibilidad.sinPrueba).length} por el titular sin pruebas.',
+          style: pw.TextStyle(fontSize: 9, color: _suave),
+        ),
         if (tiposOrdenados.isNotEmpty) ...[
           pw.SizedBox(height: 10),
           pw.Text('En qué se ha ido', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10.5)),
@@ -400,7 +412,8 @@ class InformePdf {
                 fechaCorta(d.fecha),
                 if (d.km != null) '${conMiles(d.km!)} km',
                 if (d.taller.isNotEmpty) d.taller,
-                if (d.factura.isNotEmpty) 'con factura adjunta en la app',
+                nombreCredibilidad[d.credibilidad]!,
+                if (d.factura.isNotEmpty) 'factura adjunta en la app',
                 if (d.fotos.isNotEmpty) '${d.fotos.length} ${d.fotos.length == 1 ? 'foto' : 'fotos'} de las piezas en la app',
               ].join(' · '),
               style: pw.TextStyle(fontSize: 8.5, color: _suave),

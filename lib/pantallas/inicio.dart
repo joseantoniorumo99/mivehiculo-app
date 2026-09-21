@@ -28,6 +28,7 @@ import 'elegir_taller.dart';
 import 'expediente.dart';
 import 'garaje.dart';
 import 'mejoras.dart';
+import 'ofertas.dart';
 
 class PantallaInicio extends StatefulWidget {
   /// Para saltar a otra pestaña ('diario', 'obd', 'mapa', 'perfil').
@@ -61,8 +62,11 @@ class _PantallaInicioState extends State<PantallaInicio> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
               children: [
-                _cabecera(context, coche.nombre, coche.matricula, almacen.variosVehiculos),
+                _cabecera(context, coche.nombre, coche.matricula, almacen.variosVehiculos,
+                    verificado: coche.verificado),
                 const SizedBox(height: 14),
+                if (!coche.verificado) _verificacionCoche(context, coche),
+                _ofertasCerca(context),
                 // Si hay versión nueva, se dice aquí, donde se mira. Instalar
                 // vive en el perfil: un botón de descarga en la portada es
                 // demasiado fácil de tocar sin querer.
@@ -187,7 +191,87 @@ class _PantallaInicioState extends State<PantallaInicio> {
       );
 
   /// El título ES el botón del garaje. No hay otro.
-  Widget _cabecera(BuildContext context, String nombre, String matricula, bool varios) =>
+  /// El coche verificado: el bastidor de la ficha técnica y el del OBD son el
+  /// mismo. Dos pasos, y se dice cuál falta. Sin papeles guardados.
+  Widget _verificacionCoche(BuildContext context, Vehiculo coche) {
+    if (coche.bastidoresDiscrepan) {
+      return Recuadro(
+        'El bastidor de la ficha técnica y el del coche no coinciden',
+        consejo: 'Ficha: ${coche.bastidorFicha} · OBD: ${coche.bastidorObd}. Vuelve a fotografiar '
+            'la ficha con más luz; si siguen sin cuadrar, la ficha no es de este coche.',
+        tono: TonoEstado.atencion,
+        accion: TextButton(
+          onPressed: () => Navigator.push(context,
+              MaterialPageRoute(builder: (_) => PantallaAltaVehiculo(editar: coche))),
+          child: const Text('Repetir la foto de la ficha'),
+        ),
+      );
+    }
+    final faltaFicha = coche.bastidorFicha.isEmpty;
+    final faltaObd = coche.bastidorObd.isEmpty;
+    return Recuadro(
+      'Coche sin verificar · ${coche.pasosVerificacion} de 2 pasos',
+      consejo: faltaFicha && faltaObd
+          ? 'Una foto de la ficha técnica y una lectura del OBD: si el bastidor coincide, el '
+              'coche queda verificado y el expediente vale más al venderlo.'
+          : faltaFicha
+              ? 'Ya tienes el bastidor del OBD. Falta la foto de la ficha técnica.'
+              : 'Ya tienes el bastidor de la ficha. Falta leer el OBD dentro del coche.',
+      tono: TonoEstado.neutro,
+      accion: Row(
+        children: [
+          if (faltaFicha)
+            TextButton.icon(
+              onPressed: () => Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => PantallaAltaVehiculo(editar: coche))),
+              icon: const Icon(Icons.badge_outlined, size: 18),
+              label: const Text('Foto de la ficha'),
+            ),
+          if (faltaObd)
+            TextButton.icon(
+              onPressed: () => widget.irA('obd'),
+              icon: const Icon(Icons.bluetooth_searching, size: 18),
+              label: const Text('Leer el OBD'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Las ofertas de los talleres publicados, si hay alguna vigente.
+  Widget _ofertasCerca(BuildContext context) => FutureBuilder<int>(
+        future: context.nube.talleresPublicados().then(
+            (lista) => lista.fold<int>(0, (n, f) => n + f.ofertasVigentes.length)),
+        builder: (context, snap) {
+          final n = snap.data ?? 0;
+          if (n == 0) return const SizedBox.shrink();
+          return Tarjeta(
+            onTap: () => Navigator.push(
+                context, MaterialPageRoute(builder: (_) => const PantallaOfertas())),
+            child: Row(
+              children: [
+                const PozoIcono(Icons.local_offer_outlined),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Ofertas de talleres',
+                          style: TextStyle(fontWeight: FontWeight.w700)),
+                      Text('$n ${n == 1 ? 'oferta vigente' : 'ofertas vigentes'} cerca de ti',
+                          style: const TextStyle(fontSize: 12, color: Tono.tintaSuave)),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right, color: Tono.tintaSuave),
+              ],
+            ),
+          );
+        },
+      );
+
+  Widget _cabecera(BuildContext context, String nombre, String matricula, bool varios,
+          {bool verificado = false}) =>
       InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PantallaGaraje())),
@@ -202,8 +286,17 @@ class _PantallaInicioState extends State<PantallaInicio> {
                     Text(nombre,
                         style: const TextStyle(
                             fontSize: 24, fontWeight: FontWeight.w800, letterSpacing: -0.4)),
-                    if (matricula.isNotEmpty)
-                      Text(matricula, style: const TextStyle(color: Tono.tintaSuave, fontSize: 14)),
+                    if (matricula.isNotEmpty || verificado)
+                      Row(
+                        children: [
+                          if (matricula.isNotEmpty)
+                            Text(matricula, style: const TextStyle(color: Tono.tintaSuave, fontSize: 14)),
+                          if (verificado) ...[
+                            const SizedBox(width: 8),
+                            const ChipEstado('Coche verificado', tono: TonoEstado.calma),
+                          ],
+                        ],
+                      ),
                   ],
                 ),
               ),

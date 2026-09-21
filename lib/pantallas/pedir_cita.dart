@@ -106,7 +106,8 @@ class _PantallaPedirCitaState extends State<PantallaPedirCita> {
 
     var mensaje = 'Cita anotada. Llama al taller para confirmarla.';
     if (nube.conSesion) {
-      final vehiculo = '${coche.nombre}${coche.matricula.isNotEmpty ? ' (${coche.matricula})' : ''}';
+      final vehiculo = '${coche.nombre}${coche.matricula.isNotEmpty ? ' (${coche.matricula})' : ''}'
+          '${coche.verificado ? ' · coche verificado' : ''}';
       final r = await nube.enviarCita(cita, vehiculo);
       if (r.remotoId != null) {
         cita
