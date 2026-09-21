@@ -9,6 +9,7 @@ library;
 import 'package:flutter/material.dart';
 
 import '../estado.dart';
+import '../datos/enlaces.dart';
 import '../datos/nube.dart';
 import '../tema.dart';
 
@@ -21,6 +22,18 @@ class PantallaAcceso extends StatefulWidget {
   @override
   State<PantallaAcceso> createState() => _PantallaAccesoState();
 }
+
+/// Un enlace en línea con la letra del texto: un TextButton mide 48 px de
+/// alto y rompe el párrafo.
+Widget _enlaceLegal(String texto, String url) => InkWell(
+      onTap: () => Enlaces.abrir(url),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Text(texto,
+            style: const TextStyle(
+                fontSize: 12, color: Tono.azul, decoration: TextDecoration.underline)),
+      ),
+    );
 
 class _PantallaAccesoState extends State<PantallaAcceso> {
   bool _creando = false;
@@ -190,6 +203,21 @@ class _PantallaAccesoState extends State<PantallaAcceso> {
               ),
               if (!_creando)
                 TextButton(onPressed: _claveNueva, child: const Text('He olvidado la contraseña')),
+              if (_creando) ...[
+                const SizedBox(height: 8),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    const Text('Al crear la cuenta aceptas las ',
+                        style: TextStyle(fontSize: 12, color: Tono.tintaSuave)),
+                    _enlaceLegal('condiciones de uso', Enlaces.condiciones),
+                    const Text(' y la ', style: TextStyle(fontSize: 12, color: Tono.tintaSuave)),
+                    _enlaceLegal('política de privacidad', Enlaces.privacidad),
+                    const Text('.', style: TextStyle(fontSize: 12, color: Tono.tintaSuave)),
+                  ],
+                ),
+              ],
               if (widget.ofrecerSinCuenta) ...[
                 const SizedBox(height: 20),
                 OutlinedButton(

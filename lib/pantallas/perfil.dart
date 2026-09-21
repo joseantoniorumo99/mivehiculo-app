@@ -7,6 +7,7 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../datos/enlaces.dart';
 import '../datos/mantenimiento.dart';
 import '../datos/notificador.dart';
 import '../estado.dart';
@@ -61,6 +62,21 @@ class PantallaPerfil extends StatelessWidget {
                   'Catálogo de coches: Agencia Europea de Medio Ambiente.',
                   style: TextStyle(color: Tono.tintaSuave, height: 1.45),
                 ),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 4,
+                children: [
+                  TextButton(
+                      onPressed: () => Enlaces.abrir(Enlaces.privacidad),
+                      child: const Text('Privacidad')),
+                  TextButton(
+                      onPressed: () => Enlaces.abrir(Enlaces.condiciones),
+                      child: const Text('Condiciones de uso')),
+                  TextButton(
+                      onPressed: () => Enlaces.abrir(Enlaces.soporte),
+                      child: const Text('Soporte')),
+                ],
               ),
             ],
           ),
@@ -215,9 +231,88 @@ class PantallaPerfil extends StatelessWidget {
                 style: const TextStyle(fontSize: 12, color: Tono.tintaSuave),
               ),
             ),
+          const SizedBox(height: 6),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              style: TextButton.styleFrom(foregroundColor: Tono.rojoTinta),
+              onPressed: () => _borrarCuenta(context),
+              child: const Text('Borrar mi cuenta'),
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  /// Borrar la cuenta se lleva todo lo del servidor en el acto. Se pide
+  /// escribir BORRAR: un sí/no se acepta sin leerlo, y esto no se deshace.
+  /// Después se ofrece borrar también lo del móvil, que es otra decisión:
+  /// hay quien quiere irse del servidor y seguir con su diario en el teléfono.
+  Future<void> _borrarCuenta(BuildContext context) async {
+    final nube = context.nube;
+    final almacen = context.almacen;
+    final control = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => StatefulBuilder(
+        builder: (c, poner) => AlertDialog(
+          title: const Text('Borrar mi cuenta'),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Se borran en el acto la cuenta y todo lo copiado a ella: coches, '
+                'diario, facturas, lecturas y citas. No se puede deshacer.\n\n'
+                'Escribe BORRAR para confirmar.',
+                style: TextStyle(height: 1.4),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: control,
+                autocorrect: false,
+                enableSuggestions: false,
+                textCapitalization: TextCapitalization.characters,
+                decoration: const InputDecoration(labelText: 'BORRAR'),
+                onChanged: (_) => poner(() {}),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancelar')),
+            TextButton(
+              onPressed: control.text.trim().toUpperCase() == 'BORRAR'
+                  ? () => Navigator.pop(c, true)
+                  : null,
+              style: TextButton.styleFrom(foregroundColor: Tono.rojoTinta),
+              child: const Text('Borrar la cuenta'),
+            ),
+          ],
+        ),
+      ),
+    );
+    control.dispose();
+    if (ok != true || !context.mounted) return;
+    final fallo = await nube.borrarCuenta();
+    if (!context.mounted) return;
+    if (fallo != null) {
+      avisar(context, fallo);
+      return;
+    }
+    await almacen.olvidarNube();
+    await pararComprobacionDeCitas();
+    if (!context.mounted) return;
+    final tambienMovil = await confirmar(
+      context,
+      titulo: 'Cuenta borrada',
+      texto: 'Tu cuenta y su copia ya no existen. Lo que hay en este móvil sigue aquí: '
+          '¿lo borramos también? Si lo dejas, la app sigue funcionando sin cuenta.',
+      accion: 'Borrar también el móvil',
+    );
+    if (tambienMovil) await almacen.borrarTodo();
+    if (context.mounted) avisar(context, tambienMovil ? 'Todo borrado.' : 'Cuenta borrada. Tus datos siguen en este móvil.');
   }
 
   /// La versión, y la nueva si la hay. La comprobación de fondo es cada seis

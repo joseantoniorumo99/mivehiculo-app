@@ -5,7 +5,7 @@ de lo que se le hace, los avisos de lo que toca, la lectura del motor por
 **OBD-II** con un lector ELM327 de Bluetooth clásico, los talleres cercanos y
 el expediente completo para enseñar cuando lo vendas.
 
-**Versión 1.5.1: la vista del dueño del coche.** El lado del taller vive en
+**Versión 1.6.0: la vista del dueño del coche.** El lado del taller vive en
 la versión web (PC): las citas que se piden desde el móvil le llegan allí a
 través de la cuenta, y lo que el taller conteste —confirmada, con su tiempo y
 forma de pago, o el informe de lo que hizo— vuelve al móvil como aviso.

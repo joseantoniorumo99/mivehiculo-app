@@ -580,6 +580,35 @@ class Almacen extends ChangeNotifier {
     await _guardar(esCambioPropio: false);
   }
 
+  /// Borra TODO lo del móvil: coches, diario, citas, lecturas, y las fotos
+  /// de la carpeta de la app. Es lo que se ofrece justo después de borrar la
+  /// cuenta; sin cuenta, es lo mismo que desinstalar.
+  Future<void> borrarTodo() async {
+    if (_carpeta != null) {
+      for (final i in diario) {
+        for (final f in [i.factura, ...i.fotos]) {
+          if (f.isEmpty) continue;
+          try {
+            final fichero = ficheroFactura(f);
+            if (fichero != null) await fichero.delete();
+          } catch (_) {/* ya no estaba */}
+        }
+      }
+    }
+    vehiculos.clear();
+    diario.clear();
+    citas.clear();
+    lecturas.clear();
+    _vehiculoActivoId = null;
+    _marcas.clear();
+    _enviados.clear();
+    _borrados.clear();
+    _fotosSubidas.clear();
+    final p = await SharedPreferences.getInstance();
+    await p.remove(_clave);
+    notifyListeners();
+  }
+
   /// Para las pruebas: carga un estado sin tocar disco ni preferencias.
   @visibleForTesting
   void cargarDePruebas({

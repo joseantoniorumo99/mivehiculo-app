@@ -47,9 +47,11 @@ class Nube extends ChangeNotifier {
   static const tabla = 'documentos';
   static const cubo = 'facturas';
 
-  /// La web atiende `?userId=…&secret=…` para poner clave nueva, así que el
-  /// enlace del correo de recuperación apunta allí.
-  static const urlRecuperacion = 'https://motora-42w.pages.dev/';
+  /// La web atiende `?userId=…&secret=…` para poner clave nueva y para
+  /// confirmar el correo, así que los enlaces de esos correos apuntan allí.
+  /// A `/app`, que es quien los entiende: hasta la 1.5.1 iban a la portada, y
+  /// la portada los reenvía a `/app` por si queda alguna versión vieja.
+  static const urlRecuperacion = 'https://motora-42w.pages.dev/app';
 
   late final Client _cliente;
   late final Account _cuenta;
@@ -165,6 +167,42 @@ class Nube extends ChangeNotifier {
 
   Future<void> pedirClaveNueva(String correo) =>
       _cuenta.createRecovery(email: correo.trim(), url: urlRecuperacion);
+
+  /// Borra la cuenta y TODO lo que hay en ella: lo hace la función del
+  /// servidor (acción `borrarCuenta`), porque el SDK de cliente no deja que
+  /// un usuario se borre a sí mismo y porque hay que llevarse también sus
+  /// filas, sus citas y sus ficheros con una clave que los vea todos.
+  /// Devuelve null si ha ido bien, o el motivo si no.
+  Future<String?> borrarCuenta() async {
+    if (!conSesion) return 'No hay ninguna sesión abierta.';
+    try {
+      final e = await _funciones.createExecution(
+        functionId: funcionCitas,
+        body: jsonEncode({'accion': 'borrarCuenta'}),
+        xasync: false,
+      );
+      final cuerpo = e.responseBody.trim().isEmpty
+          ? <String, dynamic>{}
+          : Map<String, dynamic>.from(jsonDecode(e.responseBody) as Map);
+      if (cuerpo['ok'] != true) {
+        return (cuerpo['error'] as String?) ??
+            'El servidor no ha contestado. Inténtalo más tarde o escríbenos.';
+      }
+    } on AppwriteException catch (e) {
+      if (e.code == 404) {
+        return 'El servidor todavía no admite borrar cuentas desde la app. '
+            'Escríbenos y lo hacemos a mano.';
+      }
+      return explicar(e);
+    } catch (_) {
+      return 'Sin conexión. Inténtalo con red.';
+    }
+    // La sesión murió con la cuenta; aquí solo queda olvidarla
+    usuario = null;
+    ultimaSincronizacion = null;
+    notifyListeners();
+    return null;
+  }
 
   Future<void> reenviarVerificacion() =>
       _cuenta.createEmailVerification(url: '$urlRecuperacion?accion=verificar');
