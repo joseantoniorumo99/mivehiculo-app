@@ -59,7 +59,7 @@ class PantallaPerfil extends StatelessWidget {
               const Tarjeta(
                 child: Text(
                   'Tus datos son tuyos: viven en este móvil y, si tienes cuenta, en '
-                  'ella. No hay anuncios ni se vende nada a nadie. El lector OBD se '
+                  'ella. No se vende nada a nadie. El lector OBD se '
                   'lee al abrir la app si el coche tiene el contacto dado, en vivo '
                   'mientras miras la pestaña, y en segundo plano solo si tú lo '
                   'enciendes.\n\n'
