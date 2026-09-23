@@ -13,6 +13,14 @@
 ///
 /// LA FOTO SE COPIA a la carpeta de la app al guardar, no al elegirla: cerrar
 /// el formulario no debe dejar imágenes sueltas sin dueño.
+///
+/// LA FOTO SE LEE: ML Kit saca el texto en el propio móvil (la factura no sale
+/// de él) y `leerFactura` propone fecha, total, taller, km, tipo y desglose.
+/// PROPONE, NO DECIDE: solo rellena lo que está vacío o lo que pusimos
+/// nosotros por defecto (la fecha de hoy, los km del coche, el primer tipo);
+/// lo que el usuario haya escrito no se toca, y nunca se guarda sola. Un
+/// importe mal leído metido a la fuerza contamina el historial y no se
+/// descubre hasta que vas a vender el coche.
 library;
 
 import 'dart:io';
@@ -20,8 +28,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../datos/leer_factura.dart';
 import '../datos/mantenimiento.dart';
 import '../datos/modelo.dart';
+import '../datos/ocr_ficha.dart';
 import '../estado.dart';
 import '../tema.dart';
 
@@ -77,6 +87,13 @@ class _PantallaEditarIntervencionState extends State<PantallaEditarIntervencion>
   String _fotoGuardada = '';
   bool _quitarFoto = false;
   bool _guardando = false;
+  bool _leyendoFactura = false;
+  String? _notaFactura;
+
+  // Lo que pusimos NOSOTROS por defecto: solo eso puede pisar la lectura
+  late final String _fechaPorDefecto;
+  late final String _kmPorDefecto;
+  late final String _tipoPorDefecto;
 
   bool get _esEdicion => widget.editar != null;
 
@@ -97,6 +114,9 @@ class _PantallaEditarIntervencionState extends State<PantallaEditarIntervencion>
     for (final l in e?.lineas ?? const <Linea>[]) {
       _lineas.add(_LineaEnEdicion(l));
     }
+    _fechaPorDefecto = _esEdicion ? '' : _fecha.text;
+    _kmPorDefecto = _esEdicion ? '' : _km.text;
+    _tipoPorDefecto = _esEdicion ? '' : _tipo;
   }
 
   @override
@@ -129,16 +149,84 @@ class _PantallaEditarIntervencionState extends State<PantallaEditarIntervencion>
   }
 
   Future<void> _elegirFoto(ImageSource de) async {
+    XFile? x;
     try {
-      final x = await ImagePicker().pickImage(source: de, maxWidth: 1600, imageQuality: 82);
-      if (x == null) return;
-      setState(() {
-        _fotoNueva = File(x.path);
-        _quitarFoto = false;
-      });
+      // 2.000 px: al OCR le cuesta con menos, y la foto se guarda tal cual
+      x = await ImagePicker().pickImage(source: de, maxWidth: 2000, imageQuality: 88);
     } catch (e) {
       if (mounted) avisar(context, 'No se ha podido coger la foto: $e');
+      return;
     }
+    if (x == null || !mounted) return;
+    setState(() {
+      _fotoNueva = File(x!.path);
+      _quitarFoto = false;
+      _notaFactura = null;
+    });
+    await _leerFactura(x.path);
+  }
+
+  /// Lee la foto y RELLENA LOS HUECOS. Al corregir una anotación ya escrita,
+  /// fecha, km y tipo son del usuario y no se tocan: solo el total, el
+  /// taller y el desglose si estaban vacíos.
+  Future<void> _leerFactura(String ruta) async {
+    setState(() => _leyendoFactura = true);
+    LecturaFactura r;
+    try {
+      final texto = await textoDeLaFoto(ruta);
+      r = leerFactura(texto);
+    } catch (e) {
+      r = const LecturaFactura.fallo('No se ha podido leer la foto. Puedes rellenar los datos a mano.');
+    }
+    if (!mounted) return;
+    final d = r.datos;
+    if (d == null || !d.hayAlgo) {
+      setState(() {
+        _leyendoFactura = false;
+        _notaFactura = r.error ??
+            'No se ha leído nada claro. Prueba con más luz, la factura plana y sin sombras; o rellénalo a mano.';
+      });
+      return;
+    }
+    final rellenado = <String>[];
+    setState(() {
+      _leyendoFactura = false;
+      if (d.fecha != null && _fechaPorDefecto.isNotEmpty && _fecha.text == _fechaPorDefecto) {
+        _fecha.text = d.fecha!;
+        rellenado.add('fecha');
+      }
+      if (d.importe != null && _coste.text.trim().isEmpty) {
+        _coste.text = _numero(d.importe!);
+        rellenado.add('total');
+      }
+      if (d.taller != null && _taller.text.trim().isEmpty) {
+        _taller.text = d.taller!;
+        rellenado.add('taller');
+      }
+      if (d.km != null && _kmPorDefecto.isNotEmpty && _km.text == _kmPorDefecto) {
+        _km.text = d.km.toString();
+        rellenado.add('km');
+      }
+      if (d.tipo != null &&
+          tiposMantenimiento.containsKey(d.tipo) &&
+          _tipoPorDefecto.isNotEmpty &&
+          _tipo == _tipoPorDefecto) {
+        _tipo = d.tipo!;
+        rellenado.add('qué se hizo');
+      }
+      if (d.lineas.isNotEmpty && _lineas.isEmpty) {
+        for (final l in d.lineas) {
+          _lineas.add(_LineaEnEdicion(Linea(concepto: l.concepto, importe: l.importe, tipo: l.tipo)));
+        }
+        rellenado.add('desglose (${d.lineas.length} líneas)');
+      }
+      if (rellenado.isEmpty) {
+        _notaFactura = 'La factura se ha leído, pero los campos ya estaban rellenos y no se ha tocado nada.';
+      } else {
+        _notaFactura = 'Leído de la factura: ${rellenado.join(', ')}. Revísalo antes de guardar'
+            '${d.iva == 'sin' ? '; el desglose suma la base y el IVA va aparte' : ''}.';
+      }
+    });
   }
 
   Future<void> _guardar() async {
@@ -324,14 +412,43 @@ class _PantallaEditarIntervencionState extends State<PantallaEditarIntervencion>
                   child: Image.file(fotoActual, height: 180, width: double.infinity, fit: BoxFit.cover),
                 ),
                 const SizedBox(height: 8),
-                TextButton.icon(
-                  onPressed: () => setState(() {
-                    _fotoNueva = null;
-                    _quitarFoto = true;
-                  }),
-                  icon: const Icon(Icons.close, size: 18),
-                  label: const Text('Quitar la foto'),
+                Row(
+                  children: [
+                    TextButton.icon(
+                      onPressed: _leyendoFactura ? null : () => _leerFactura(fotoActual.path),
+                      icon: const Icon(Icons.document_scanner_outlined, size: 18),
+                      label: const Text('Leer los datos'),
+                    ),
+                    TextButton.icon(
+                      onPressed: () => setState(() {
+                        _fotoNueva = null;
+                        _quitarFoto = true;
+                        _notaFactura = null;
+                      }),
+                      icon: const Icon(Icons.close, size: 18),
+                      label: const Text('Quitar la foto'),
+                    ),
+                  ],
                 ),
+                if (_leyendoFactura)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 4, bottom: 8),
+                    child: Row(
+                      children: [
+                        SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                        SizedBox(width: 10),
+                        Text('Leyendo la factura…', style: TextStyle(color: Tono.tintaSuave)),
+                      ],
+                    ),
+                  )
+                else if (_notaFactura != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Recuadro(
+                      _notaFactura!,
+                      tono: _notaFactura!.startsWith('Leído') ? TonoEstado.calma : TonoEstado.neutro,
+                    ),
+                  ),
               ] else
                 Row(
                   children: [
@@ -354,8 +471,9 @@ class _PantallaEditarIntervencionState extends State<PantallaEditarIntervencion>
                 ),
               const SizedBox(height: 6),
               const Text(
-                'La foto se guarda dentro de la app y no sale del móvil salvo a tu '
-                'cuenta, si la tienes.',
+                'La factura se lee en el propio móvil y rellena lo que esté vacío: '
+                'fecha, total, taller, kilómetros y desglose. La foto no sale del '
+                'móvil salvo a tu cuenta, si la tienes.',
                 style: TextStyle(fontSize: 12, color: Tono.tintaSuave),
               ),
               const SizedBox(height: 18),
