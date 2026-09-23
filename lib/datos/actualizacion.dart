@@ -25,7 +25,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config_build.dart';
 
 class Actualizacion extends ChangeNotifier {
-  static const repo = 'joseantoniorumo99/mivehiculo-app';
+  static const repo = 'mivehiculoapp/mivehiculo-app';
   static const _claveUltimaComprobacion = 'act_ultima_comprobacion';
   static const _cadaHoras = 6;
 
