@@ -1,0 +1,11 @@
+<!-- Manifiesto SOLO del flavor "play": lo que cambia respecto al de siempre
+     (src/main/AndroidManifest.xml), que Gradle fusiona con este.
+
+     Google Play prohíbe que una app instale otro APK por su cuenta, así que
+     esta variante no puede llevar el permiso que lo permite. `tools:node=
+     "remove"` lo quita de verdad del manifiesto fusionado; sin esto, el
+     permiso del manifiesto principal ganaría igualmente. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" tools:node="remove"/>
+</manifest>

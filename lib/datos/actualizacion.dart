@@ -22,6 +22,8 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../config_build.dart';
+
 class Actualizacion extends ChangeNotifier {
   static const repo = 'joseantoniorumo99/mivehiculo-app';
   static const _claveUltimaComprobacion = 'act_ultima_comprobacion';
@@ -51,6 +53,9 @@ class Actualizacion extends ChangeNotifier {
   /// Pregunta a GitHub. Con `forzar` se salta la espera de seis horas (el
   /// botón del perfil); sin él, respeta la calma.
   Future<void> comprobar({bool forzar = false}) async {
+    // En la versión de Play esto no se ejecuta NUNCA: ni la consulta a
+    // GitHub, ni la descarga, ni el instalador. Ver config_build.dart.
+    if (esVersionPlay) return;
     if (comprobando) return;
     try {
       final p = await SharedPreferences.getInstance();

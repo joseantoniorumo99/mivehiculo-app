@@ -45,6 +45,26 @@ android {
         versionName = flutter.versionName
     }
 
+    /* DOS FORMAS DE REPARTIR LA MISMA APP.
+       "github": la de siempre, se actualiza sola desde GitHub Releases.
+       "play": para Google Play, que PROHÍBE que una app instale otro APK por
+       su cuenta ("Apps distributed via Google Play may not modify, replace or
+       update their own APK... using any method other than Google Play's
+       update mechanism"). El permiso REQUEST_INSTALL_PACKAGES se quita en
+       src/play/AndroidManifest.xml, y el código que comprueba y descarga
+       versiones no se ejecuta en esa variante (lib/config_build.dart).
+       Mismo applicationId en las dos: es la misma app, solo cambia por dónde
+       se reparte. Sin --flavor, `flutter build` para y pide elegir uno. */
+    flavorDimensions += "distribucion"
+    productFlavors {
+        create("github") {
+            dimension = "distribucion"
+        }
+        create("play") {
+            dimension = "distribucion"
+        }
+    }
+
     signingConfigs {
         if (hayFirmaDeRelease) {
             create("release") {

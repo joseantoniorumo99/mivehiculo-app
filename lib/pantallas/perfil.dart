@@ -7,6 +7,7 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../config_build.dart';
 import '../datos/enlaces.dart';
 import '../datos/mantenimiento.dart';
 import '../datos/notificador.dart';
@@ -48,8 +49,12 @@ class PantallaPerfil extends StatelessWidget {
                   'El historial completo, para compartir', const PantallaExpediente()),
               _enlace(context, Icons.autorenew, 'Lectura automática',
                   'Cuándo lee el OBD sola, y lo que cuesta', const PantallaLecturaAutomatica()),
-              const TituloSeccion('Versión'),
-              _actualizacion(context),
+              // En la versión de Play no hay nada que comprobar: Play no deja
+              // que la app se actualice a sí misma (ver config_build.dart).
+              if (!esVersionPlay) ...[
+                const TituloSeccion('Versión'),
+                _actualizacion(context),
+              ],
               const TituloSeccion('Sobre la app'),
               const Tarjeta(
                 child: Text(

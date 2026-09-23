@@ -156,10 +156,25 @@ lector, lo empareja y lee.
 
 ## Releases
 
-Cada versión se publica como release de GitHub con el APK adjunto, y la app
-instalada lo encuentra sola. Todas van firmadas con la **misma clave** (fuera
-del repo, en `android/key.properties`, ignorado por git): sin eso Android no
-instalaría una versión encima de la anterior y habría que desinstalar.
+Dos flavors de Android, misma app, mismo `applicationId`:
+
+- **`github`**: la de siempre. Se actualiza sola desde las Releases de este
+  repo. `flutter build apk --release --flavor github`.
+- **`play`**: para Google Play, que prohíbe que una app instale otro APK por
+  su cuenta. No lleva el permiso `REQUEST_INSTALL_PACKAGES`
+  (`android/app/src/play/AndroidManifest.xml` lo quita) ni el código que
+  comprueba y descarga versiones (`lib/config_build.dart`, apagado con
+  `--dart-define=PLAY_STORE=true`). `flutter build appbundle --release
+  --flavor play --dart-define=PLAY_STORE=true`.
+
+Con flavors definidos, `flutter build` sin `--flavor` para y pide elegir uno.
+
+Cada versión de GitHub se publica como release con el APK adjunto. Todas van
+firmadas con la **misma clave** (fuera del repo, en `android/key.properties`,
+ignorado por git): sin eso Android no instalaría una versión encima de la
+anterior y habría que desinstalar. La de Play, en su primera subida, usa la
+misma clave como "clave de subida" (Play App Signing la vuelve a firmar con la
+suya para distribuir).
 
 ## Servidor (opcional)
 
