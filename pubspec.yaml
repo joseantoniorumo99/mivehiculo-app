@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.8.1+15
+version: 1.8.2+16
 
 environment:
   sdk: ^3.13.3
@@ -100,6 +100,18 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+
+  # Genera el icono de verdad de la app (todas las densidades + adaptativo)
+  # a partir de un único PNG. Antes del 25/09/2026 el launcher llevaba el
+  # logo de Flutter por defecto: nunca se había puesto uno propio.
+  flutter_launcher_icons: ^0.14.3
+
+flutter_launcher_icons:
+  android: true
+  image_path: "assets/icono/icono-play.png"
+  adaptive_icon_background: "#2b6cb0"
+  adaptive_icon_foreground: "assets/icono/icono-play.png"
+  min_sdk_android: 21
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
