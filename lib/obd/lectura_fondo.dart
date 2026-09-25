@@ -40,7 +40,7 @@ import 'transporte_bluetooth.dart';
 
 /// El nombre de la tarea Dart. Tiene que coincidir LETRA POR LETRA con el que
 /// encola `ReceptorBluetooth.kt`.
-const String tareaLecturaObd = 'es.regislab.mivehiculo.lecturaObd';
+const String tareaLecturaObd = 'com.mivehiculo.app.lecturaObd';
 const String _nombrePeriodica = 'lectura-obd-periodica';
 const String _nombrePrueba = 'lectura-obd-prueba';
 

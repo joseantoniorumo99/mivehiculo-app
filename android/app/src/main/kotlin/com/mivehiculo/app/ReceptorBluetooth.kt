@@ -1,4 +1,4 @@
-package es.regislab.mivehiculo
+package com.mivehiculo.app
 
 import android.bluetooth.BluetoothDevice
 import android.content.BroadcastReceiver
@@ -59,7 +59,7 @@ class ReceptorBluetooth : BroadcastReceiver() {
         if (!esElCoche) return
 
         val datos = buildTaskInputData(
-            dartTask = "es.regislab.mivehiculo.lecturaObd",
+            dartTask = "com.mivehiculo.app.lecturaObd",
             payload = mapOf("motivo" to "bluetooth", "aparato" to direccion),
             foregroundServiceConfig = null,
             uniqueName = "lectura-obd-bluetooth",

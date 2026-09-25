@@ -180,7 +180,10 @@ suya para distribuir).
 
 La cuenta usa un proyecto de Appwrite. Para montarlo hace falta una tabla
 `documentos` y un cubo `facturas` con seguridad por fila y por fichero, y
-registrar la app como plataforma Android (`es.regislab.mivehiculo`). Las citas
+registrar la app como plataforma Android (`com.mivehiculo.app`; antes
+`es.regislab.mivehiculo`, cambiado el 25/09/2026 para no llevar el nombre de
+otra empresa — quien tuviera una versión anterior instalada no puede
+actualizar encima, hay que reinstalar). Las citas
 van por una tabla `citas` (con las columnas de texto `respuesta` e `informe`,
 JSON) y una función `citas` que las crea con el permiso del taller. Sin
 servidor la app funciona igual: lo dice en el perfil y se queda en local.

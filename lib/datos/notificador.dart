@@ -29,7 +29,7 @@ import 'nube.dart';
 
 /// El nombre de la tarea Dart de la comprobación de citas. El despachador de
 /// `lectura_fondo.dart` la reconoce por este nombre.
-const String tareaCitas = 'es.regislab.mivehiculo.citas';
+const String tareaCitas = 'com.mivehiculo.app.citas';
 const String _nombrePeriodica = 'citas-periodica';
 
 class Notificador {

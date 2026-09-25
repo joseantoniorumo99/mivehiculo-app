@@ -221,7 +221,7 @@ class _PantallaMapaState extends State<PantallaMapa> {
                   children: [
                     TileLayer(
                       urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                      userAgentPackageName: 'es.regislab.mivehiculo',
+                      userAgentPackageName: 'com.mivehiculo.app',
                       maxZoom: 19,
                       // Si las teselas no llegan (sin red, o el servidor de OSM
                       // corta), se dice una vez en vez de dejar cuadros grises

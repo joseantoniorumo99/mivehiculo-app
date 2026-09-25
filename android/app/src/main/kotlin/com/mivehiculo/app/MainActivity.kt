@@ -1,4 +1,4 @@
-package es.regislab.mivehiculo
+package com.mivehiculo.app
 
 import io.flutter.embedding.android.FlutterActivity
 
