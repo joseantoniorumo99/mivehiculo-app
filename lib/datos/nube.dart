@@ -284,20 +284,22 @@ class Nube extends ChangeNotifier {
   /// pase queda en `ultimoAviso` para que el perfil lo cuente.
   ///
   /// ANTES de tocar el servidor, comprueba de quién es lo que hay en este
-  /// móvil. Si es de otra cuenta, no se sube nada: se marca
-  /// `conflictoDeCuenta` y se para ahí. Subir a ciegas el coche o el diario
-  /// de otra persona a esta cuenta, o intentar escribir encima de una fila
-  /// que no es suya, es peor que preguntar primero.
+  /// móvil. Si es de OTRA cuenta, no se sube nada: como hace cualquier app
+  /// con cuentas (Gmail, Drive...), el cambio de cuenta se resuelve solo, sin
+  /// preguntar nada — se vacía este móvil y se descarga lo de la cuenta
+  /// activa. Lo que hubiera no se pierde: si de verdad era de otra persona,
+  /// sigue intacto en su cuenta; si nunca llegó a sincronizarse con nadie,
+  /// ya se habría subido antes de que esto pudiera pasar. Se deja una nota
+  /// breve en `ultimoAviso` para no esconder que ha pasado, nada más.
   Future<void> sincronizar(Almacen almacen) async {
     if (!conSesion || sincronizando) return;
     final uid = usuario!.$id;
     final propietario = almacen.propietarioLocal;
+    String? avisoCambioDeCuenta;
     if (propietario != null && propietario != uid && almacen.hayDatosLocales) {
-      conflictoDeCuenta = true;
-      notifyListeners();
-      return;
+      await almacen.borrarTodo();
+      avisoCambioDeCuenta = 'Este móvil tenía datos de otra cuenta; se han sustituido por los de $correo.';
     }
-    conflictoDeCuenta = false;
     sincronizando = true;
     ultimoAviso = null;
     notifyListeners();
@@ -306,6 +308,7 @@ class Nube extends ChangeNotifier {
       await almacen.marcarPropietario(uid);
       ultimaSincronizacion = DateTime.now();
       servidorListo = true;
+      ultimoAviso = avisoCambioDeCuenta;
     } on AppwriteException catch (e) {
       if (e.code == 404) {
         /// La tabla no existe: el servidor no está preparado. No es un fallo

@@ -26,6 +26,16 @@
          pide al mandar una cita, que es cuando tiene sentido. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
+    <!-- La foto de la factura o de la ficha técnica es SIEMPRE una elección
+         puntual (image_picker con el selector del sistema): nunca hace falta
+         ver la galería entera. `image_picker_android` declara estos dos por
+         si acaso en su propio manifiesto, pero el selector del sistema no
+         los necesita para funcionar en ningún Android soportado por esta
+         app. Google Play los marca como "sin declarar su uso" si se dejan:
+         la respuesta correcta no es justificarlos, es no pedirlos (25/09/2026). -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" tools:node="remove"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" tools:node="remove"/>
+
     <application
         android:label="Mi Vehículo"
         android:name="${applicationName}"
