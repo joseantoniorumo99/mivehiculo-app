@@ -55,6 +55,27 @@ class Almacen extends ChangeNotifier {
   final Map<String, String> _borrados = {};
   final Set<String> _fotosSubidas = {};
 
+  /// De qué cuenta es lo que hay guardado en ESTE móvil. Null si nunca se ha
+  /// sincronizado con nadie (el caso normal: uso sin cuenta, o recién
+  /// instalado). Cada coche y cada anotación lleva un id fijo que, en cuanto
+  /// se sube una vez, queda ligado a esa cuenta en el servidor para siempre
+  /// (`upsertRow` con ese mismo id). Si el móvil pasa a otra cuenta —de la
+  /// familia, un tester, quien sea— y la app subiera lo que hay sin más,
+  /// intentaría escribir encima de filas que no son suyas (falla con 401) o,
+  /// peor, en algún caso podría acabar mezclando el diario de una persona en
+  /// la cuenta de otra. Por eso `Nube` no sincroniza a ciegas cuando esto no
+  /// coincide con la cuenta activa: lo pregunta primero.
+  String? _propietarioLocal;
+  String? get propietarioLocal => _propietarioLocal;
+  bool get hayDatosLocales =>
+      vehiculos.isNotEmpty || diario.isNotEmpty || citas.isNotEmpty || lecturas.isNotEmpty;
+
+  Future<void> marcarPropietario(String uid) async {
+    if (_propietarioLocal == uid) return;
+    _propietarioLocal = uid;
+    await _guardar(esCambioPropio: false);
+  }
+
   /// Se avisa aquí cada vez que algo cambia por la mano del usuario (no por
   /// la sincronización). La nube lo escucha para subir en cuanto pueda.
   final _cambios = StreamController<void>.broadcast();
@@ -139,6 +160,7 @@ class Almacen extends ChangeNotifier {
       _fotosSubidas
         ..clear()
         ..addAll(((j['fotosSubidas'] ?? []) as List).map((x) => x.toString()));
+      _propietarioLocal = j['propietarioLocal'] as String?;
     } catch (e) {
       /// UN GUARDADO ILEGIBLE NO SE BORRA. Si el JSON está roto se arranca
       /// vacío, pero el texto original sigue en las preferencias: mientras
@@ -159,6 +181,7 @@ class Almacen extends ChangeNotifier {
         'enviados': _enviados,
         'borrados': _borrados,
         'fotosSubidas': _fotosSubidas.toList(),
+        'propietarioLocal': _propietarioLocal,
       });
 
   Future<void> _guardar({bool esCambioPropio = true}) async {
@@ -604,6 +627,7 @@ class Almacen extends ChangeNotifier {
     _enviados.clear();
     _borrados.clear();
     _fotosSubidas.clear();
+    _propietarioLocal = null;
     final p = await SharedPreferences.getInstance();
     await p.remove(_clave);
     notifyListeners();

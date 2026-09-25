@@ -95,6 +95,13 @@ class Nube extends ChangeNotifier {
   /// silencio cada minuto.
   bool servidorListo = true;
 
+  /// Verdadero cuando lo que hay en este móvil es de OTRA cuenta (ver
+  /// `Almacen.propietarioLocal`). Mientras esté así, `sincronizar()` no toca
+  /// el servidor: subir a ciegas escribiría encima de filas de otra persona,
+  /// o mezclaría su diario en esta cuenta. El perfil lo enseña y ofrece
+  /// `resolverConflictoVaciando`.
+  bool conflictoDeCuenta = false;
+
   Nube() {
     _cliente = Client().setEndpoint(endpoint).setProject(proyecto);
     _cuenta = Account(_cliente);
@@ -173,6 +180,17 @@ class Nube extends ChangeNotifier {
   /// un usuario se borre a sí mismo y porque hay que llevarse también sus
   /// filas, sus citas y sus ficheros con una clave que los vea todos.
   /// Devuelve null si ha ido bien, o el motivo si no.
+  /// Resuelve `conflictoDeCuenta` vaciando este móvil (coche, diario, citas,
+  /// lecturas y sus fotos) y descargando lo que de verdad tenga esta cuenta
+  /// en el servidor. Es la opción segura: si lo que había era importante,
+  /// seguía a salvo en su cuenta original, entrando con ella en cualquier
+  /// otro móvil.
+  Future<void> resolverConflictoVaciando(Almacen almacen) async {
+    await almacen.borrarTodo();
+    conflictoDeCuenta = false;
+    await sincronizar(almacen);
+  }
+
   Future<String?> borrarCuenta() async {
     if (!conSesion) return 'No hay ninguna sesión abierta.';
     try {
@@ -264,13 +282,28 @@ class Nube extends ChangeNotifier {
 
   /// Baja lo del servidor, mezcla, y sube lo que falte. Nunca lanza: lo que
   /// pase queda en `ultimoAviso` para que el perfil lo cuente.
+  ///
+  /// ANTES de tocar el servidor, comprueba de quién es lo que hay en este
+  /// móvil. Si es de otra cuenta, no se sube nada: se marca
+  /// `conflictoDeCuenta` y se para ahí. Subir a ciegas el coche o el diario
+  /// de otra persona a esta cuenta, o intentar escribir encima de una fila
+  /// que no es suya, es peor que preguntar primero.
   Future<void> sincronizar(Almacen almacen) async {
     if (!conSesion || sincronizando) return;
+    final uid = usuario!.$id;
+    final propietario = almacen.propietarioLocal;
+    if (propietario != null && propietario != uid && almacen.hayDatosLocales) {
+      conflictoDeCuenta = true;
+      notifyListeners();
+      return;
+    }
+    conflictoDeCuenta = false;
     sincronizando = true;
     ultimoAviso = null;
     notifyListeners();
     try {
       await _sincronizarDeVerdad(almacen);
+      await almacen.marcarPropietario(uid);
       ultimaSincronizacion = DateTime.now();
       servidorListo = true;
     } on AppwriteException catch (e) {

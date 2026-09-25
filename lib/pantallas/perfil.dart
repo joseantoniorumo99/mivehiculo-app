@@ -123,6 +123,47 @@ class PantallaPerfil extends StatelessWidget {
       );
     }
 
+    if (nube.conflictoDeCuenta) {
+      return Tarjeta(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Este móvil tiene datos de otra cuenta',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 4),
+            Text(
+              'El coche y el diario que hay guardados aquí se anotaron con otra '
+              'cuenta, no con ${nube.correo}. Para no mezclarlos, no se han subido.\n\n'
+              'Si son tuyos de verdad, entra con la cuenta con la que los anotaste: '
+              'ahí siguen a salvo. Si no son tuyos (un móvil compartido, una prueba), '
+              'puedes vaciar este teléfono y traerte lo que tenga ${nube.correo} '
+              'en su cuenta.',
+              style: const TextStyle(color: Tono.tintaSuave, height: 1.4),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(44), foregroundColor: Tono.rojoTinta),
+              onPressed: () async {
+                final ok = await confirmar(
+                  context,
+                  titulo: 'Vaciar este móvil',
+                  texto: 'Se borran de este teléfono el coche, el diario, las citas y las '
+                      'lecturas que hay ahora. Si de verdad eran tuyos y no los habías '
+                      'sincronizado nunca, se pierden: entra primero con la cuenta '
+                      'original si no estás seguro.',
+                  accion: 'Vaciar y usar esta cuenta',
+                );
+                if (!ok) return;
+                await nube.resolverConflictoVaciando(almacen);
+              },
+              child: const Text('Vaciar este móvil y usar esta cuenta'),
+            ),
+          ],
+        ),
+      );
+    }
+
     final ultima = nube.ultimaSincronizacion;
     final String estado;
     if (nube.sincronizando) {

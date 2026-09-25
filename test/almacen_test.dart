@@ -131,4 +131,39 @@ void main() {
       expect((j['marcas'] as Map).length, 2);
     });
   });
+
+  group('de quién es lo que hay en el móvil', () {
+    test('sin coche ni diario no hay datos que proteger', () async {
+      final a = Almacen();
+      await a.cargar();
+      expect(a.hayDatosLocales, isFalse);
+    });
+
+    test('con un coche sí hay datos locales', () async {
+      final a = Almacen()..cargarDePruebas();
+      await a.anadirVehiculo(Vehiculo(marca: 'Seat', modelo: 'León'));
+      expect(a.hayDatosLocales, isTrue);
+    });
+
+    test('marcarPropietario se guarda y sobrevive a una recarga', () async {
+      final a = Almacen();
+      await a.cargar();
+      expect(a.propietarioLocal, isNull, reason: 'un móvil nuevo no es de nadie todavía');
+      await a.marcarPropietario('usuario-1');
+      expect(a.propietarioLocal, 'usuario-1');
+
+      final b = Almacen();
+      await b.cargar();
+      expect(b.propietarioLocal, 'usuario-1', reason: 'lo mismo que había guardado el anterior');
+    });
+
+    test('borrarTodo también olvida de quién era el móvil', () async {
+      final a = Almacen()..cargarDePruebas();
+      await a.anadirVehiculo(Vehiculo(marca: 'Seat'));
+      await a.marcarPropietario('usuario-1');
+      await a.borrarTodo();
+      expect(a.propietarioLocal, isNull);
+      expect(a.hayDatosLocales, isFalse);
+    });
+  });
 }
